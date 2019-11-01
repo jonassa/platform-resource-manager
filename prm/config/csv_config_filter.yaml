@@ -16,3 +16,6 @@ runner: !BuildRunnerCSV
     strict: false
     use_origin: false
     verbose: false
+  wl_filter: !WorkloadFilter
+    name_pattern: '(^.*\/prod\/.*$)|(^.*ads.*\/.*\/.*$)'   # build model for workload whose name follows given pattern
+    cpu_quota: 6.0  # build model for workload whose assigned CPU quota is no less than given value 

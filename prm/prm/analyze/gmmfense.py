@@ -29,12 +29,12 @@ log = logging.getLogger(__name__)
 class GmmFense:
     """ This class implements GMM fense build and related retrieve methods """
 
-    def __init__(self, data, max_mixture=10, threshold=0.1):
+    def __init__(self, data, threshold=0.05, max_mixture=10):
         """
         Class constructor, arguments include:
             data - data to build GMM model
-            max_mixture - max number of Gaussian mixtures
             threshold - probability threhold to determine fense
+            max_mixture - max number of Gaussian mixtures
         """
         self.data = data
         self.thresh = threshold

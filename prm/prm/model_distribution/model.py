@@ -28,8 +28,13 @@ log = logging.getLogger(__name__)
 class DistriModel(object):
     """Building thresholds for platform metrics.
     Arguments:
+        ratio: ratio to utilization of historical peak, it determines where
+               is lowest utilization bin starts
+            (default to 0.5)
         span: how many sigma span for normal fense
-            (default to 4)
+            (default to 3)
+        prob:  probility threshold for outlier detection
+            (default to 0.05)
         strict: if true, pick less aggressive value from 3_std_threshold or
                 extreme gaussian value),If False, always 3_std_threshold
             (default to true)
@@ -40,26 +45,34 @@ class DistriModel(object):
     """
 
     UTIL_BIN_STEP = 50
+    MIN_SAMPLED_NUM_IN_BIN = 100
 
     def __init__(self,
+                 ratio: Optional[float] = 0.5,
                  span: Optional[int] = 3,
+                 prob: Optional[float] = 0.05,
                  strict: Optional[bool] = True,
                  use_origin: Optional[bool] = False,
                  verbose: Optional[bool] = False,
                  ):
+        self.ratio = 0.5 if ratio is None else ratio
         self.span = 3 if span is None else span
+        self.prob = 0.05 if prob is None else prob
         self.strict = True if span is None else strict
         self.use_origin = False if use_origin is None else use_origin
         self.verbose = False if verbose is None else verbose
 
-    def partition_utilization(self, cpu_number, step=UTIL_BIN_STEP):
+    def partition_utilization(self, cpu_number, historic_max, step=UTIL_BIN_STEP):
         """
         Partition utilizaton bins based on requested CPU number and step count
             cpu_number - processor count assigned to workload
             step - bin range of one partition, default value is half processor
         """
-        utilization_upper = (cpu_number + 1) * 100
-        utilization_lower = cpu_number * 50
+        utilization_upper = (cpu_number + 0.5) * 100
+        utilization_lower = int((historic_max * self.ratio) / step) * step
+
+        if utilization_lower < 100:
+            utilization_lower = 100
 
         utilization_bar = np.arange(utilization_lower, utilization_upper, step)
 
@@ -89,24 +102,25 @@ class DistriModel(object):
             }
         return tdp_thresh
 
-    def _get_fense_origin(self, mdf, is_upper, strict, span):
-        gmm_fense = GmmFense(mdf.values.reshape(-1, 1))
-        if strict:
-            return gmm_fense.get_strict_fense(is_upper, span)
+    def _get_fense_origin(self, mdf, is_upper):
+        gmm_fense = GmmFense(mdf.values.reshape(-1, 1), self.prob)
+        if self.strict:
+            return gmm_fense.get_strict_fense(is_upper, self.span)
 
-        return gmm_fense.get_normal_fense(is_upper, span)
+        return gmm_fense.get_normal_fense(is_upper, self.span)
 
-    def _get_fense(self, mdf, is_upper, strict, span, use_origin):
-        if use_origin is True:
-            return self._get_fense_origin(mdf, is_upper, strict, span)
+    def _get_fense(self, mdf, is_upper):
+        if self.use_origin is True:
+            return self._get_fense_origin(mdf, is_upper)
 
-        gmm_fense = GmmFense(mdf.values.reshape(-1, 1))
+        gmm_fense = GmmFense(mdf.values.reshape(-1, 1), self.prob)
 
-        return gmm_fense.get_gaussian_round_fense(is_upper, strict, span)
+        return gmm_fense.get_gaussian_round_fense(is_upper, self.strict, self.span)
 
-    def _build_thresh(self, cpu_number, jdata, span, strict, use_origin, verbose):
+    def _build_thresh(self, cpu_number, jdata):
+        log.debug('build thresholds for %s', jdata[Metric.NAME].values[0])
         utilization_partition = self.partition_utilization(
-            cpu_number, self.UTIL_BIN_STEP)
+            cpu_number, jdata[Metric.UTIL].max(), self.UTIL_BIN_STEP)
 
         length = len(utilization_partition)
         thresholds = []
@@ -119,15 +133,18 @@ class DistriModel(object):
             try:
                 jdataf = jdata[(jdata[Metric.UTIL] >= lower_bound) &
                                (jdata[Metric.UTIL] <= higher_bound)]
+                log.debug('CPU utilization bin: start: %f, end: %f', lower_bound, higher_bound)
+                if len(jdataf) < self.MIN_SAMPLED_NUM_IN_BIN:
+                    continue
+                log.debug('Build CPI threshold:')
                 cpi = jdataf[Metric.CPI]
-                cpi_thresh = self._get_fense(cpi, True, strict,
-                                             span, use_origin)
+                cpi_thresh = self._get_fense(cpi, True)
+                log.debug('Build MPKI threshold:')
                 mpki = jdataf[Metric.L3MPKI]
-                mpki_thresh = self._get_fense(mpki, True, strict,
-                                              span, use_origin)
+                mpki_thresh = self._get_fense(mpki, True)
+                log.debug('Build MB threshold:')
                 memb = jdataf[Metric.MB]
-                mb_thresh = self._get_fense(memb, False, strict,
-                                            span, use_origin)
+                mb_thresh = self._get_fense(memb, False)
                 thresh = {
                     'util_start': lower_bound.item(),
                     'util_end': higher_bound.item(),
@@ -135,19 +152,19 @@ class DistriModel(object):
                     'mpki': np.float64(mpki_thresh).item(),
                     'mb': np.float64(mb_thresh).item()
                 }
+                log.debug('Build MSPKI threshold:')
                 mspki = jdataf[Metric.MSPKI]
-                mspki_thresh = self._get_fense(mspki, True, strict, span, use_origin)
+                mspki_thresh = self._get_fense(mspki, True)
                 thresh['mspki'] = np.float64(mspki_thresh).item()
                 thresholds.append(thresh)
 
             except Exception:
-                if verbose:
+                if self.verbose:
                     log.exception('error in build threshold util= (%r)', util)
         return thresholds
 
     def build_model(self, dataframe, cpu_number):
         tdp_thresh = self._build_tdp_thresh(cpu_number, dataframe)
-        thresholds = self._build_thresh(
-            cpu_number, dataframe, self.span, self.strict, self.use_origin, self.verbose)
+        thresholds = self._build_thresh(cpu_number, dataframe)
 
         return tdp_thresh, thresholds

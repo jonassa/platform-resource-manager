@@ -5,6 +5,7 @@
 - [Introduction](#Introduction)
 - [Train model from data in Prometheus database](#Train-model-from-data-in-Prometheus-database)
 - [Train model from csv data](#Train-model-from-csv-data)
+  - [Filter workloads for model building](#Filter-workloads-for-model-building)
 - [Key-value store of model thresholds](#Key-value-store-of-model-thresholds)
 
 ## Introduction
@@ -77,11 +78,45 @@ runner: !BuildRunnerCSV
       #client_cert_path: "/home/ssg/ssl/keystore.pem"
       #client_key_path: "/home/ssg/ssl/keystore.pem"
   model: !DistriModel
+    ratio: 0.3
     span: 3
+    prob: 0.05
     strict: true
     use_origin: false
     verbose: false
 ```
+
+### Filter workloads for model building
+
+When you train model from csv data, you may filter some of workloads for model building by using a filter object. 
+You may filter workload by name regex pattern or by assigned CPU quota number or by both. 
+
+csv_config_filter.yaml example:
+
+```yaml
+runner: !BuildRunnerCSV
+  file_path: "data/file.csv"
+  database: !ModelDatabase
+    db_type: zookeeper    # 1) local 2)zookeeper 3)etcd
+    host: "10.239.157.129:2181"     # required for zookeeper and etcd
+    namespace: ~     # for zookeeper, if none, using default model_distribution
+    timeout: 5.0
+    #ssl: !SSL
+      #server_verify: true
+      #client_cert_path: "/home/ssg/ssl/keystore.pem"
+      #client_key_path: "/home/ssg/ssl/keystore.pem"
+  model: !DistriModel
+    ratio: 0.3
+    span: 3
+    prob: 0.05
+    strict: true
+    use_origin: false
+    verbose: false
+  wl_filter: !WorkloadFilter
+    name_pattern: '(^.*\/prod\/.*$)|(^.*ads.*\/.*\/.*$)'   # build model for workload whose name follows given pattern
+    cpu_quota: 6.0  # build model for workload whose assigned CPU quota is no less than given value 
+```
+
 
 ## Key-value store of model thresholds
 

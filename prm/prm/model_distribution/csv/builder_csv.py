@@ -23,6 +23,7 @@ from wca.runners import Runner
 from prm.model_distribution.metric import Metric
 from prm.model_distribution.model import DistriModel
 from prm.model_distribution.db import ModelDatabase, DatabaseError
+from prm.model_distribution.csv.filter import WorkloadFilter
 from prm.analyze.analyzer import ThreshType
 from wca.config import Path
 import pandas as pd
@@ -57,10 +58,12 @@ class BuildRunnerCSV(Runner):
         file_path: Path,
         database: ModelDatabase,
         model: DistriModel,
+        wl_filter: WorkloadFilter = None
     ):
         self._file_path = file_path
         self._model = model
         self._database = database
+        self._filter = wl_filter
         self._finish = False
 
         self.default_columns = {Metric.NAME, Metric.CPU_MODEL,
@@ -105,6 +108,12 @@ class BuildRunnerCSV(Runner):
                                          "columns {} do not match".format(
                                             set(df.columns),
                                             self.default_columns))
+        if self._filter:
+            flt = self._filter
+            if flt.cpu_quota > 0:
+                df = df[df[Metric.VCPU_COUNT] >= flt.cpu_quota]
+            if flt.name_pattern:
+                df = df[df[Metric.NAME].str.contains(flt.name_pattern)]
 
         model_keys = df.groupby([Metric.CPU_MODEL, Metric.NAME, Metric.VCPU_COUNT]).groups.keys()
 
