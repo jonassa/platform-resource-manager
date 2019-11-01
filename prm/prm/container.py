@@ -19,6 +19,7 @@
 This module implements resource contention detection on one workload
 """
 
+import copy
 import logging
 from datetime import datetime
 from collections import deque
@@ -28,6 +29,24 @@ from wca.detectors import ContendedResource
 from prm.analyze.analyzer import Metric
 
 log = logging.getLogger(__name__)
+
+
+class Heatmap:
+    """
+    This class the abstraction of a resource heatmap for one CPU
+    utilization range
+    """
+    def __init__(self, lower_bound, upper_bound):
+        self.lower_bound = lower_bound
+        self.upper_bound = upper_bound
+        self.llc_map = dict()
+        self.mb_map = dict()
+
+    def set_llc_map(self, llc_map):
+        self.llc_map = copy.deepcopy(llc_map)
+
+    def set_mb_map(self, mb_map):
+        self.mb_map = copy.deepcopy(mb_map)
 
 
 class Container:
@@ -48,6 +67,126 @@ class Container:
         self.llc_cnt = 0
         self.history_depth = history_depth + 1
         self.metrics_history = deque([], self.history_depth)
+        self.heatmaps = []
+
+    def init_heatmaps(self, thresholds):
+        if thresholds is None:
+            return
+        self.clean_heatmaps()
+        for i in range(0, len(thresholds)):
+            threshold = thresholds[i]
+            self.heatmaps.append(Heatmap(threshold['util_start'], threshold['util_end']))
+
+        self.print_heatmap()
+
+    def clean_heatmaps(self):
+        self.heatmaps = []
+
+    def re_init_heatmaps(self, thresholds):
+        self.clean_heatmaps()
+        self.init_heatmaps(thresholds)
+
+    def print_heatmap(self):
+        for i in range(0, len(self.heatmaps)):
+            heatmap = self.heatmaps[i]
+            log.debug(
+                "cid: %s, util_lower: %f, util_upper: %f",
+                self.cid,
+                heatmap.lower_bound,
+                heatmap.upper_bound)
+            log.debug("llc heatmap: %s", str(heatmap.llc_map))
+            log.debug("mb heatmap: %s", str(heatmap.mb_map))
+
+    def _find_heatmap_index(self, util):
+        for i in range(0, len(self.heatmaps)):
+            heatmap = self.heatmaps[i]
+            if util >= heatmap.lower_bound and util <= heatmap.upper_bound:
+                return i
+        return -1
+
+    def _find_heatmap(self, util, resource_type):
+        heatmap_index = self._find_heatmap_index(util)
+
+        if heatmap_index == -1:
+            return None
+
+        heatmap = self.heatmaps[heatmap_index]
+        if resource_type == Metric.L3OCC:
+            return heatmap.llc_map
+        elif resource_type == Metric.MB:
+            return heatmap.mb_map
+
+        return None
+
+    def _update_heatmap(self, util, resource_type, metrics):
+        heatmap_index = self._find_heatmap_index(util)
+
+        if heatmap_index == -1:
+            return
+
+        map_to_update = {}
+
+        for cid, metric in metrics.items():
+            if cid == self.cid:
+                continue
+            if resource_type == Metric.L3OCC:
+                map_to_update[cid] = metric[Metric.L3OCC]
+            elif resource_type == Metric.MB:
+                map_to_update[cid] = metric[Metric.MB]
+
+        if resource_type == Metric.L3OCC:
+            self.heatmaps[heatmap_index].set_llc_map(map_to_update)
+        elif resource_type == Metric.MB:
+            self.heatmaps[heatmap_index].set_mb_map(map_to_update)
+
+    def _update_neighbor_metrics_to_heatmap(self, util, contentions, all_metrics):
+        if ContendedResource.UNKN in contentions:
+            return
+
+        if ContendedResource.LLC not in contentions:
+            self._update_heatmap(self.util, Metric.L3OCC, all_metrics)
+
+        if ContendedResource.MEMORY_BW not in contentions:
+            self._update_heatmap(self.util, Metric.MB, all_metrics)
+
+    def detect_contender_from_heatmap(self, contention_type, all_metrics):
+        suspect_cid = None
+        resource_type = None
+        max_delta = 0.0
+        resource_map = {}
+
+        util = self.metrics[Metric.UTIL]
+
+        if contention_type == ContendedResource.LLC:
+            resource_type = Metric.L3OCC
+        elif contention_type == ContendedResource.MEMORY_BW:
+            resource_type = Metric.MB
+        else:
+            return suspect_cid
+
+        resource_map = self._find_heatmap(util, resource_type)
+
+        if resource_map is None or len(resource_map) == 0:
+            return None
+
+        for cid, metric in all_metrics.items():
+            if cid == self.cid:
+                continue
+            history_data = 0.0
+            current_data = metric[resource_type]
+            if cid in resource_map:
+                history_data = resource_map[cid]
+            delta = current_data - history_data
+
+            log.debug(
+                'cid=%r delta=%.1f current=%.1f history=%.1f',
+                cid, delta, current_data, history_data)
+
+            if delta > max_delta:
+                suspect_cid = cid
+                max_delta = delta
+
+        return suspect_cid
 
     '''
     add metric data to metrics history
@@ -125,7 +264,6 @@ class Container:
                          self.cpu_usage) * 100 / ((timestamp - self.usg_tt) * 1e9)
         self.cpu_usage = measurements[MetricName.CPU_USAGE_PER_TASK]
         self.usg_tt = timestamp
-
         if measurements.get(MetricName.LLC_OCCUPANCY, 0) > 0:
             self.total_llc_occu += measurements[MetricName.LLC_OCCUPANCY]
             self.llc_cnt += 1
@@ -145,6 +283,7 @@ class Container:
             if metrics[Metric.INST] == 0:
                 metrics[Metric.CPI] = 0
                 metrics[Metric.L3MPKI] = 0
+                metrics[Metric.MSPKI] = 0
             else:
                 metrics[Metric.CPI] = metrics[Metric.CYC] /\
                     metrics[Metric.INST]
@@ -157,6 +296,8 @@ class Container:
                 metrics[Metric.MB] = (measurements[MetricName.MEM_BW] -
                                       self.measurements.get(MetricName.MEM_BW, 0)) /\
                     1024 / 1024 / delta_t
+            else:
+                metrics[Metric.MB] = 0
             if metrics[Metric.UTIL] == 0:
                 metrics[Metric.NF] = 0
             else:
@@ -216,9 +357,7 @@ class Container:
                          self.cid, metrics[Metric.CPI])
                 cond_res.append(ContendedResource.UNKN)
 
-            return cond_res, wca_metrics
-
-        return [], wca_metrics
+        return cond_res, wca_metrics
 
     def tdp_contention_detect(self, tdp_thresh):
         """ detect TDP contention in container """
@@ -246,23 +385,22 @@ class Container:
 
         return None, wca_metrics
 
-    def contention_detect(self, threshs):
-        """ detect resouce contention after find proper utilization bin """
-        if not threshs:
+    def contention_detect(self, thresholds, all_metrics):
+        """ detect resource contention after find proper utilization bin """
+        if not thresholds:
             return [], []
 
         metrics = self.metrics
-        for i in range(0, len(threshs)):
-            thresh = threshs[i]
-            if metrics[Metric.UTIL] < thresh['util_start']:
-                if i == 0:
-                    return [], []
+        util = metrics[Metric.UTIL]
+        for i in range(0, len(thresholds)):
+            threshold = thresholds[i]
+            if util >= threshold['util_start'] and util <= threshold['util_end']:
+                contented_resource, wca_metrics = self._detect_in_bin(threshold)
+                self._update_neighbor_metrics_to_heatmap(util, contented_resource, all_metrics)
+                self.print_heatmap()
+                return contented_resource, wca_metrics
 
-                return self._detect_in_bin(threshs[i - 1])
-
-            if metrics[Metric.UTIL] >= thresh['util_start']:
-                if metrics[Metric.UTIL] < thresh['util_end'] or i == len(threshs) - 1:
-                    return self._detect_in_bin(thresh)
+        return [], []
 
     def __str__(self):
         metrics = self.metrics

@@ -98,30 +98,48 @@ class ResourceAllocator(Allocator):
             with open(data_file, 'w') as dtf:
                 dtf.write(','.join(cols) + '\n')
 
-    def _detect_contenders(self, con: Container, resource: ContendedResource):
+    def _detect_contender_heatmap(
+            self, container, contented_resource: ContendedResource, all_metrics):
+        cid = container.detect_contender_from_heatmap(contented_resource, all_metrics)
+        return cid
+
+    def _detect_contender_heuristic(
+            self, container, contented_resource: ContendedResource, all_metrics):
+        resource_max = -np.Inf
+        contender_id = None
+        data = 0.0
+
+        for cid, metrics in all_metrics.items():
+            if cid == container.cid:
+                continue
+            if contented_resource == ContendedResource.LLC:
+                data = metrics[Metric.L3OCC]
+            elif contented_resource == ContendedResource.MEMORY_BW:
+                data = metrics[Metric.MB]
+            elif contented_resource == ContendedResource.TDP:
+                data = metrics[Metric.UTIL]
+
+            if data > 0 and data > resource_max:
+                resource_max = data
+                contender_id = cid
+
+        return contender_id
+
+    def _detect_contenders(self, con: Container, resource: ContendedResource, all_metrics):
         contenders = []
+        contender_cid = None
         if resource == ContendedResource.UNKN:
             return contenders
 
-        resource_delta_max = -np.Inf
-        contender_id = None
-        for cid, container in self.container_map.items():
-            delta = 0
-            if con.cid == container.cid:
-                continue
-            if resource == ContendedResource.LLC:
-                delta = container.get_llcoccupany_delta()
-            elif resource == ContendedResource.MEMORY_BW:
-                delta = container.get_latest_mbt()
-            elif resource == ContendedResource.TDP:
-                delta = container.get_freq_delta()
+        if resource == ContendedResource.TDP:
+            contender_cid = self._detect_contender_heuristic(con, resource, all_metrics)
+        else:
+            contender_cid = self._detect_contender_heatmap(con, resource, all_metrics)
+            if contender_cid is None:
+                contender_cid = self._detect_contender_heuristic(con, resource, all_metrics)
 
-            if delta > 0 and delta > resource_delta_max:
-                resource_delta_max = delta
-                contender_id = container.cid
-
-        if contender_id:
-            contenders.append(contender_id)
+        if contender_cid is not None:
+            contenders.append(contender_cid)
 
         return contenders
 
@@ -141,7 +159,7 @@ class ResourceAllocator(Allocator):
             thresh = self.threshs[app][vcpus][thresh_type.value]
         return thresh
 
-    def _detect_one_task(self, con: Container, app: str):
+    def _detect_one_task(self, con: Container, app: str, all_container_metrics):
         anomalies = []
         if not con.get_metrics():
             return anomalies
@@ -149,18 +167,18 @@ class ResourceAllocator(Allocator):
         cid = con.cid
         thresh = self._get_thresholds(app, ThreshType.METRICS)
         if thresh:
-            contends, wca_metrics = con.contention_detect(thresh)
+            contends, wca_metrics = con.contention_detect(thresh, all_container_metrics)
             log.debug('cid=%r contends=%r', cid, contends)
             log.debug('cid=%r threshold metrics=%r', cid, wca_metrics)
             for contend in contends:
-                contenders = self._detect_contenders(con, contend)
+                contenders = self._detect_contenders(con, contend, all_container_metrics)
                 self._append_anomaly(anomalies, contend, cid, contenders,
                                      wca_metrics)
         thresh_tdp = self._get_thresholds(app, ThreshType.TDP)
         if thresh_tdp:
             tdp_contend, wca_metrics = con.tdp_contention_detect(thresh_tdp)
             if tdp_contend:
-                contenders = self._detect_contenders(con, tdp_contend)
+                contenders = self._detect_contenders(con, tdp_contend, all_container_metrics)
                 self._append_anomaly(anomalies, tdp_contend, cid, contenders,
                                      wca_metrics)
 
@@ -313,6 +331,7 @@ class ResourceAllocator(Allocator):
                 container = self.container_map[cid]
             else:
                 container = Container(cid)
+                container.init_heatmaps(self._get_thresholds(app, ThreshType.METRICS))
                 self.container_map[cid] = container
                 if self.enable_control:
                     if cid in self.bes:
@@ -361,6 +380,13 @@ class ResourceAllocator(Allocator):
         for contention, flag in contentions.items():
             if contention in self.controllers:
                 self.controllers[contention].update(self.bes, self.lcs, flag, False)
+
+    def _get_all_container_metrics(self):
+        all_metrics = {}
+        for container in self.container_map.values():
+            all_metrics[container.cid] = container.get_metrics()
+
+        return all_metrics.copy()
 
     def allocate(
             self,
@@ -418,6 +444,8 @@ class ResourceAllocator(Allocator):
         self._process_measurements(tasks_measurements, tasks_labels, metric_list,
                                    platform.timestamp, assigned_cpus, platform.cpu_model)
 
+        all_container_metrics = self._get_all_container_metrics()
+
         anomaly_list = []
         if self.agg:
             if self.database and self.cycle == 0:
@@ -428,6 +456,9 @@ class ResourceAllocator(Allocator):
                         log.info('pulled model thresholds=%r', self.threshs)
                     else:
                         log.warn('No model is pulled from model database!')
+                    for container in self.container_map.values():
+                        app = self._cid_to_app(container.cid, tasks_labels)
+                        container.init_heatmaps(self._get_thresholds(app, ThreshType.METRICS))
                 except Exception:
                     log.exception('error in pulling model from database')
             self.cycle += 1
@@ -437,7 +468,7 @@ class ResourceAllocator(Allocator):
             for container in self.container_map.values():
                 app = self._cid_to_app(container.cid, tasks_labels)
                 if app and container.cid not in self.bes:
-                    anomalies = self._detect_one_task(container, app)
+                    anomalies = self._detect_one_task(container, app, all_container_metrics)
                     anomaly_list.extend(anomalies)
             if anomaly_list:
                 log.debug('anomalies: %r', anomaly_list)
