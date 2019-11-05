@@ -1,7 +1,4 @@
-runner: !BuildRunner
-  prometheus_host: "10.239.157.129:9090"
-  cycle:    # default 3600s
-  time_range:    # defult 86400 secondsrunner: !BuildRunner
+runner: !BuildRunnerProm
   prometheus_host: "10.239.157.129:9090"
   cycle:    # default 3600s
   time_range:    # defult 86400 seconds
@@ -15,7 +12,7 @@ runner: !BuildRunner
     api_path: "/v3beta"     # for etcd, '/v3alpha' for 3.2.x etcd version, '/v3beta' or '/v3' for 3.3.x etcd version
     timeout: 5.0     # for etcd, default 5.0 seconds
     ssl: !SSL 
-      server_verify: false
+      server_verify: true
       client_cert_path: ~
       client_key_path: ~
   model: !DistriModel
