@@ -112,6 +112,8 @@ class ResourceAllocator(Allocator):
         for cid, metrics in all_metrics.items():
             if cid == container.cid:
                 continue
+            if not metrics or len(metrics) == 0:
+                continue
             if contented_resource == ContendedResource.LLC:
                 data = metrics[Metric.L3OCC]
             elif contented_resource == ContendedResource.MEMORY_BW:

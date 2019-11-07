@@ -129,6 +129,8 @@ class Container:
         for cid, metric in metrics.items():
             if cid == self.cid:
                 continue
+            if not metric or len(metric) == 0:
+                continue
             if resource_type == Metric.L3OCC:
                 map_to_update[cid] = metric[Metric.L3OCC]
             elif resource_type == Metric.MB:
@@ -171,6 +173,8 @@ class Container:
 
         for cid, metric in all_metrics.items():
             if cid == self.cid:
+                continue
+            if not metric or len(metric) == 0:
                 continue
             history_data = 0.0
             current_data = metric[resource_type]
