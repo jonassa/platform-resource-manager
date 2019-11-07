@@ -91,6 +91,13 @@ runner: !BuildRunnerCSV
 When you train model from csv data, you may filter some of workloads for model building by using a filter object. 
 You may filter workload by name regex pattern or by assigned CPU quota number or by both. 
 
+run commands
+
+```
+// for security reason, WCA requires absolute file path for configuration
+./dist/wca-prm.pex -c $PWD/csv_config_filter.yaml -r prm.model_distribution.csv.builder_csv:BuildRunnerCSV -r prm.model_distribution.db:ModelDatabase -r prm.model_distribution.model:DistriModel -r prm.model_distribution.csv.filter:WorkloadFilter -l info
+```
+
 csv_config_filter.yaml example:
 
 ```yaml
