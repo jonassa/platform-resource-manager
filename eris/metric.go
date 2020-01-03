@@ -58,6 +58,7 @@ func initMetric() {
 			eventIndex[e] = i
 		}
 	}
+	log.Printf("%+v\n", eventIndex)
 }
 
 var containers = map[string]*Container{}
@@ -107,7 +108,7 @@ func updateContainers() {
 				}
 			}
 		}
-		if *control && newbe {
+		if *control && !*disableQuota && newbe {
 			cpuq.budgeting(bes, lcs)
 		}
 	}

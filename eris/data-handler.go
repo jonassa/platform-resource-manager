@@ -76,7 +76,7 @@ func handleData() {
 			if lcUtils > thresholds.LcUtilMax {
 				updateLcUtilMax(lcUtils)
 			}
-			if *control && len(bes) > 0 {
+			if *control && !*disableQuota && len(bes) > 0 {
 				exceed, hold := cpuq.detectMarginExceed(lcUtils, beUtils)
 				if !*enableHold {
 					hold = false
@@ -96,6 +96,14 @@ func handleData() {
 					detectContention(metrics, m, contends)
 					detectTDPContention(m, contends)
 				}
+			}
+			if *control {
+				for c, v:= range contends{
+					controller, ok := controllers[c]
+					if ok {
+						controller.update(nil, nil, v, false)
+					}
+				}		
 			}
 			if *recordMetric {
 				metricCsvWriter.Flush()

@@ -207,7 +207,7 @@ func detectInBin(bt BinThreshold, m Metric, metrics map[string]Metric, cm map[in
 				m.Name, m.CPUUtilization, m.CyclesPerInstruction, bt.Cpi, m.CacheMissPerKiloInstructions, bt.Mpki)
 			detectContender(metrics, m.Name, llcContention, m.CPUUtilization)
 		}
-		if m.CyclesPerL3Miss > bt.Cpl3m {
+		if m.CyclesPerL3Miss > 0 && m.CyclesPerL3Miss > bt.Cpl3m {
 			cm[mbwContention] = true
 			unknown = false
 			log.Printf("MB Contention detected on %s, CPU Usage: %+v, CPI: %+v, Thresh: %+v, CPL3M: %+v, Thresh: %+v\n",
@@ -217,6 +217,13 @@ func detectInBin(bt BinThreshold, m Metric, metrics map[string]Metric, cm map[in
 				cm[pmmContention] = true
 				log.Printf("AEP Contention on %s, PMM Percentage: %+v, Thresh: %+v\n", m.Name, m.PMMInstPercentage, bt.PMM)
 			}
+			detectContender(metrics, m.Name, mbwContention, m.CPUUtilization)
+		} else if m.StallsMemoryLoadPerKiloInstructions > 0 && m.StallsMemoryLoadPerKiloInstructions > bt.Mspki && unknown {
+			// detect memory contention with mspki only if memory latency metrics is not available and cache contention is not identified
+			cm[mbwContention] = true
+			unknown = false
+			log.Printf("MB Contention detected on %s, CPU Usage: %+v, CPI: %+v, Thresh: %+v, MSPKI: %+v, Thresh: %+v\n",
+				m.Name, m.CPUUtilization, m.CyclesPerInstruction, bt.Cpi, m.StallsMemoryLoadPerKiloInstructions, bt.Mspki)
 			detectContender(metrics, m.Name, mbwContention, m.CPUUtilization)
 		}
 
