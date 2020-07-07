@@ -1,3 +1,22 @@
+# Copyright (C) 2018 Intel Corporation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+#
+# SPDX-License-Identifier: Apache-2.0
+
+""" This module implements regression wrapper based on Gaussian Process Regressor model """
+
 import numpy as np
 import sys
 from sklearn.gaussian_process import GaussianProcessRegressor
@@ -8,6 +27,8 @@ epsilon = 0.000001
 
 
 class GPRWrapper(object):
+    """ Build GPR with model selection and kernel selection, and can optimize GPR model with std as noise.
+    """
     def __init__(self, normalize_error=False):
         self.normalize_error = normalize_error
         self.baseline_evaluated = False
@@ -287,6 +308,8 @@ class GPRWrapper(object):
 
 
 class NormalizedGPR(object):
+    """ Normalize y of GPR model.
+    """
     def __init__(self, x, y, error, kernel, optimizer,
                  normalize_error=False, scale_error=False):
         self.create_normalization(y)
@@ -320,6 +343,8 @@ class NormalizedGPR(object):
         self.gp.fit(x, self.normalize(y))
 
     def predict(self, x):
+        """Note, the normalisation is reversed before the GP predictions are reported.
+        """
         y_predict, y_std = self.gp.predict(x, return_std=True)
         y_predict = self.denormalize(y_predict)
         y_std = self.denormalize_error(y_std)
