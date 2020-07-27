@@ -1,7 +1,7 @@
 # How to Use Regression Wrappers
 ## Table of Contents
-  - [GPR regressor](#GPR_regressor)
-  - [Ridge regressor](#Ridge_regressor)
+  - [GPR regressor](#GPR-regressor)
+  - [Ridge regressor](#Ridge-regressor)
 
 ## GPR regressor
 Example code of using GPR regressor with RBF kernel
