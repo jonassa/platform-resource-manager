@@ -126,7 +126,6 @@ class Analyzer:
     def _get_fense(self, mdf, is_upper, strict, span, use_origin):
         if use_origin is True:
             return self._get_fense_origin(mdf, is_upper, strict, span)
-
         gmm_fense = GmmFense(mdf.values.reshape(-1, 1))
 
         return gmm_fense.get_gaussian_round_fense(is_upper, strict, span)
@@ -149,6 +148,10 @@ class Analyzer:
             try:
                 jdataf = jdata[(jdata[Metric.UTIL] >= lower_bound) &
                                (jdata[Metric.UTIL] <= higher_bound)]
+                print("LOWER BOUND: " + str(lower_bound))
+                print("HIGHER BOUND: " + str(higher_bound))
+                print(jdataf)
+                print("")
                 cpi = jdataf[Metric.CPI]
                 cpi_thresh = self._get_fense(cpi, True, strict,
                                              span, use_origin)
@@ -184,7 +187,7 @@ class Analyzer:
                 if verbose:
                     log.exception('error in build threshold util=%r (%r)',
                                   job, util)
-
+        print(self.threshold)
     def _process_lc_max(self, util_file):
         udf = pd.read_csv(util_file)
         lcs = udf[udf['name'] == 'lcs']

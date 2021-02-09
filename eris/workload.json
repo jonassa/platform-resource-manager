@@ -1,30 +1,6 @@
 {
-    "cassandra_workload": {
-        "cpus": 10, 
+    "dc-server": {
+        "cpus": 4,
         "type": "latency_critical"
-    }, 
-    "django_workload": {
-        "cpus": 8,
-        "type": "latency_critical"
-    }, 
-    "memcache_workload_1": {
-	"cpus": 2,
-	"type": "latency_critical"
-    }, 
-    "memcache_workload_2": {
-	"cpus": 2,
-	"type": "latency_critical"
-    },    
-    "memcache_workload_3": {
-	"cpus": 2,
-	"type": "latency_critical"
-    },
-    "stress-ng": {
-	"cpus": 2,
-	"type": "best_efforts"
-    },
-    "tensorflow_training": {
-	"cpus": 1,
-	"type": "best_efforts"
     }
 }

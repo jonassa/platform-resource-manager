@@ -25,9 +25,8 @@ import sys
 
 import time
 import traceback
-
-import docker
 import numpy as np
+import docker
 
 from argparse import ArgumentParser, FileType
 from datetime import datetime

@@ -22,3 +22,5 @@ eris/util.csv
 eris/tdp_thresh.csv
 eris/thresh.csv
 eris/threshold.json
+
+eris/workload.json
