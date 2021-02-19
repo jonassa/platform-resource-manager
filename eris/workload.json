@@ -1,6 +1,6 @@
 {
     "dc-server": {
-        "cpus": 4,
+        "cpus": 18,
         "type": "latency_critical"
     }
 }
