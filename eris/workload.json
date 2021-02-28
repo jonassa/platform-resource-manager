@@ -2,5 +2,9 @@
     "dc-server": {
         "cpus": 18,
         "type": "latency_critical"
+    },
+    "stress": {
+        "cpus": 18,
+        "type": "best_efforts"
     }
 }
