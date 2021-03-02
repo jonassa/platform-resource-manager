@@ -1,0 +1,30 @@
+{
+    "lcutilmax": 1737.8303701935483,
+    "dc-warmup": {
+        "tdp_threshold": {},
+        "metrics_threshold": []
+    },
+    "dc-server": {
+        "tdp_threshold": {
+            "util": 1710.0,
+            "mean": 2354.0,
+            "std": 1.3333333333333333,
+            "bar": 2350.0
+        },
+        "metrics_threshold": [
+            {
+                "util_start": 1150,
+                "util_end": 1200,
+                "cpi": 1.782733131770872,
+                "mpki": 3.9607800417241608,
+                "mb": 0.0,
+                "l2spki": 422.95308874289077,
+                "mspki": 741.0289583122992
+            }
+        ]
+    },
+    "dc-client": {
+        "tdp_threshold": {},
+        "metrics_threshold": []
+    }
+}

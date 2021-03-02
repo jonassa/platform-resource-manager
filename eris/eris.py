@@ -466,8 +466,8 @@ def main():
     ctx.cgroup_driver = detect_cgroup_driver()
     ctx.analyzer = Analyzer(ctx.args.workload_conf_file,
                             ctx.args.thresh_file)
-    init_wlset(ctx)
-    init_sysmax(ctx)
+    init_wlset(ctx) # Create sets for LC and BE jobs defined in workloads.json
+    init_sysmax(ctx) # Set max recorded CPU utilization during training
 
     if ctx.args.enable_prometheus:
         ctx.prometheus.start()
