@@ -26,6 +26,7 @@ class Resource(object):
     def __init__(self, init_level=BUGET_LEV_MIN, level_max=BUGET_LEV_MAX):
         self.quota_level = init_level
         self.level_max = level_max
+        self.level_min = init_level
 
     def is_min_level(self):
         """ is resource controled in lowest level """
@@ -45,6 +46,12 @@ class Resource(object):
         self.quota_level = self.quota_level + 1
         if self.quota_level == self.level_max:
             self.quota_level = Resource.BUGET_LEV_FULL
+        self.update()
+    
+    def reduce_level(self):
+        self.quota_level = self.quota_level - 1
+        if self.quota_level == self.level_min:
+            self.quota_level = Resource.BUGET_LEV_MIN
         self.update()
 
     def update(self):

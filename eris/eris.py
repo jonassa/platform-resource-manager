@@ -35,7 +35,7 @@ try:
     from os import cpu_count
 except ImportError:
     from multiprocessing import cpu_count
-from threading import Thread
+from threading import Thread, Lock
 
 from container import Container, Contention
 from cpuquota import CpuQuota
@@ -47,6 +47,7 @@ from pgos import Pgos
 from analyze.analyzer import Metric, Analyzer, ThreshType
 
 __version__ = 0.8
+
 
 
 class Context(object):
@@ -64,6 +65,8 @@ class Context(object):
         self.be_set = {}
         self.cpuq = None
         self.llc = None
+        self.lat = None
+        self.lat_thresh = None
         self.controllers = {}
         self.util_cons = dict()
         self.metric_cons = dict()
@@ -239,9 +242,9 @@ def mon_util_cycle(ctx):
         name = container.name
         pids = list_pids(container)
         key = cid if ctx.args.key_cid else name
-        if cid in ctx.util_cons:
+        if cid in ctx.util_cons: # If container already registered
             con = ctx.util_cons[cid]
-        else:
+        else:                    # If not, create the container object and set default share
             con = Container(ctx.cgroup_driver, cid, name, pids,
                             ctx.args.verbose)
             ctx.util_cons[cid] = con
@@ -271,21 +274,42 @@ def mon_util_cycle(ctx):
             utilf.write(date + ',,lcs,' + str(lc_utils) + '\n')
             utilf.write(date + ',,loadavg1m,' + str(loadavg) + '\n')
 
-    if lc_utils > ctx.sysmax_util:
-        ctx.sysmax_util = lc_utils
-        ctx.analyzer.update_lcutilmax(lc_utils)
-        if ctx.args.control:
-            ctx.cpuq.update_max_sys_util(lc_utils)
+    ## REGULATE BY LATENCY HERE
+
+    #if lc_utils > ctx.sysmax_util:
+    #    ctx.sysmax_util = lc_utils
+    #    ctx.analyzer.update_lcutilmax(lc_utils)
+    #    if ctx.args.control:
+    #        ctx.cpuq.update_max_sys_util(lc_utils)
 
     if newbe:
         ctx.cpuq.budgeting(bes, [])
+
+    read_latency(ctx)
+    lowest = ctx.cpuq.is_min_level()
+    exceed = ctx.lat > ctx.lat_thresh
+    if ctx.lat is None:
+        return None
+    if lowest:
+        return {"lowest_level" : True, "latency_imp" : False}
+    if exceed:
+        prev_lat = ctx._lat
+        ctx.cpuq.reduce_level()
+
+        sleep(1)
+        read_latency(ctx)
+        if ctx.lat > prev_lat:
+            return {"lowest_level" : False, "latency_imp" : True}
+    else if not exceed:
+
+    
+
 
     if findbe and ctx.args.control:
         exceed, hold = ctx.cpuq.detect_margin_exceed(lc_utils, be_utils)
         if not ctx.args.enable_hold:
             hold = False
         ctx.controllers[Contention.CPU_CYC].update(bes, [], exceed, hold)
-
 
 def mon_metric_cycle(ctx):
     """
@@ -334,6 +358,10 @@ def mon_metric_cycle(ctx):
         if data:
             set_metrics(ctx, timestamp, data)
 
+def read_latency(ctx):
+    # Reads latency from file or socket and stores it in ctx.lat
+    pass
+
 
 def monitor(func, ctx, interval):
     """
@@ -341,6 +369,7 @@ def monitor(func, ctx, interval):
         ctx - agent context
         interval - timer interval
     """
+    ## REPLACE THIS ENTIRE CODE WITH WATCHDOG
     next_time = time.time()
     while not ctx.shutdown:
         func(ctx)
@@ -441,6 +470,10 @@ def parse_arguments():
                         type=float, default=0.5)
     parser.add_argument('-t', '--thresh-file', help='threshold model file build\
                         from analyze.py tool', default=Analyzer.THRESH_FILE)
+    parser.add_argument('-L', '--latency-interval', help='Latency monitoring\
+                        interval', type=float, choices=range(0.0, 100.0), default=0.2)
+    parser.add_argument('--latency-threshold', help='Latency threshold', type=float, default=4.0)
+
 
     args = parser.parse_args()
     if args.verbose:
@@ -469,6 +502,9 @@ def main():
     init_wlset(ctx) # Create sets for LC and BE jobs defined in workloads.json
     init_sysmax(ctx) # Set max recorded CPU utilization during training
 
+    ctx.lat = None
+    ctx.lat_thresh = ctx.args.latency_threshold
+
     if ctx.args.enable_prometheus:
         ctx.prometheus.start()
 
@@ -487,8 +523,9 @@ def main():
     if ctx.args.record:
         cols = ['time', 'cid', 'name', Metric.UTIL]
         init_data_file(ctx, Analyzer.UTIL_FILE, cols)
-    threads = [Thread(target=monitor, args=(mon_util_cycle,
-                                            ctx, ctx.args.util_interval))]
+
+    ## Create thread to monitor latency
+    threads = [Thread(target=monitor, args=(mon_util_cycle, ctx, ctx.args.latency_interval))]
 
     if ctx.args.collect_metrics:
         if ctx.args.record:
@@ -504,9 +541,9 @@ def main():
             print('error in libpgos init, error code: ' + str(ret))
         else:
             ctx.pgos_inited = True
-        threads.append(Thread(target=monitor,
-                              args=(mon_metric_cycle,
-                                    ctx, ctx.args.metric_interval)))
+        #threads.append(Thread(target=monitor,
+        #                      args=(mon_metric_cycle,
+        #                            ctx, ctx.args.metric_interval)))
 
     for thread in threads:
         thread.start()
@@ -528,4 +565,5 @@ def main():
 
 
 if __name__ == '__main__':
+    lock = Lock()
     main()
