@@ -19,17 +19,17 @@
 
 
 from mresource import Resource
-
+from datetime import datetime
 
 class NaiveController:
     """ This class implement a naive control logic against BE workloads """
 
-    def __init__(self, res, cyc_thresh=3):
+    def __init__(self, res, verbose, cyc_thresh=3):
         self.res = res
         self.cyc_thresh = cyc_thresh
-        self.cyc_cnt = 0
+        self.verbose = verbose
 
-    def update(self, be_containers, lc_containers, detected, hold):
+    def update(self, be_containers, lc_containers, level):
         """
         Update contention detection result to controller, controller conducts
         control policy on BE workloads based on current contention status
@@ -38,19 +38,25 @@ class NaiveController:
             hold - if current resource level need to be maintained
         """
 
-        if detected:
-            self.cyc_cnt = 0
-            # always throttle BE to minimal considering new thread in BE
-            self.res.set_level(Resource.BUGET_LEV_MIN)
-            self.res.budgeting(be_containers, lc_containers)
+        if level < 0:
+            if self.res.is_min_level():
+                pass
+                # already at min, pass
+            else:
+
+                self.res.reduce_level(level)
+                self.res.budgeting(be_containers, lc_containers)
+
+            if self.verbose:
+                print(f"{datetime.now().isoformat(' ')} Deceasing BE jobs to level {self.res.quota_level}")
+            
         else:
-            if hold or self.res.is_full_level():
+            if self.res.is_full_level():
                 # no contention, pass
                 pass
             else:
-                # increase cycle count, adjust budget if step count is reached
-                self.cyc_cnt = self.cyc_cnt + 1
-                if self.cyc_cnt >= self.cyc_thresh:
-                    self.cyc_cnt = 0
-                    self.res.increase_level()
-                    self.res.budgeting(be_containers, lc_containers)
+                self.res.increase_level(level)
+                self.res.budgeting(be_containers, lc_containers)
+            
+            if self.verbose:
+                print(f"{datetime.now().isoformat(' ')} Increasing BE jobs to level {self.res.quota_level}")

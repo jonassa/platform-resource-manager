@@ -72,6 +72,8 @@ class Context(object):
         self.metric_cons = dict()
         self.analyzer = None
         self.cgroup_driver = 'cgroupfs'
+        self.last_controller = None
+        self.line_number = 0
 
     @property
     def docker_client(self):
@@ -285,31 +287,19 @@ def mon_util_cycle(ctx):
     if newbe:
         ctx.cpuq.budgeting(bes, [])
 
-    read_latency(ctx)
     lowest = ctx.cpuq.is_min_level()
-    exceed = ctx.lat > ctx.lat_thresh
-    if ctx.lat is None:
-        return None
-    if lowest:
-        return {"lowest_level" : True, "latency_imp" : False}
-    if exceed:
-        prev_lat = ctx._lat
-        ctx.cpuq.reduce_level()
-
-        sleep(1)
-        read_latency(ctx)
-        if ctx.lat > prev_lat:
-            return {"lowest_level" : False, "latency_imp" : True}
-    else if not exceed:
-
-    
-
+    levels = 0
 
     if findbe and ctx.args.control:
-        exceed, hold = ctx.cpuq.detect_margin_exceed(lc_utils, be_utils)
+        levels = ctx.controllers[Contention.CPU_CYC].res.level_estimate(ctx.lat)
+
         if not ctx.args.enable_hold:
             hold = False
-        ctx.controllers[Contention.CPU_CYC].update(bes, [], exceed, hold)
+
+        if levels != 0:
+            ctx.controllers[Contention.CPU_CYC].update(bes, [], levels)
+    
+    return {"level_diff": levels}
 
 def mon_metric_cycle(ctx):
     """
@@ -358,12 +348,15 @@ def mon_metric_cycle(ctx):
         if data:
             set_metrics(ctx, timestamp, data)
 
-def read_latency(ctx):
-    # Reads latency from file or socket and stores it in ctx.lat
-    pass
+def read_one_line_latency(ctx):
+    latfile = open('dummy_latency.txt')
+    content = latfile.readlines()
+    line = content[ctx.line_number % len(content)]
+    print(f"Read line number {ctx.line_number % len(content)} with value {line}")
+    return int(line)
 
 
-def monitor(func, ctx, interval):
+def monitor(ctx, interval):
     """
     wrap schedule timer function
         ctx - agent context
@@ -371,14 +364,21 @@ def monitor(func, ctx, interval):
     """
     ## REPLACE THIS ENTIRE CODE WITH WATCHDOG
     next_time = time.time()
+
     while not ctx.shutdown:
-        func(ctx)
+
+        ctx.lat = read_one_line_latency(ctx)
+        ctx.line_number += 1
+
+        level_diff = mon_util_cycle(ctx)
         while True:
             next_time += interval
             delta = next_time - time.time()
             if delta > 0:
                 break
         time.sleep(delta)
+    
+    print("monitor done")
 
 
 def init_wlset(ctx):
@@ -466,14 +466,13 @@ def parse_arguments():
     parser.add_argument('-q', '--quota-cycles', help='cycle number in CPU CFS\
                         quota controller', type=int, default=7)
     parser.add_argument('-k', '--margin-ratio', help='margin ratio related to\
-                        one logical processor used in CPU cycle regulation',
-                        type=float, default=0.5)
+                        latency',
+                        type=float, default=0.95)
     parser.add_argument('-t', '--thresh-file', help='threshold model file build\
                         from analyze.py tool', default=Analyzer.THRESH_FILE)
     parser.add_argument('-L', '--latency-interval', help='Latency monitoring\
-                        interval', type=float, choices=range(0.0, 100.0), default=0.2)
-    parser.add_argument('--latency-threshold', help='Latency threshold', type=float, default=4.0)
-
+                        interval', type=float, default=1.0)
+    parser.add_argument('--latency-threshold', help='Latency threshold', type=float, default=20.0)
 
     args = parser.parse_args()
     if args.verbose:
@@ -510,8 +509,8 @@ def main():
 
     if ctx.args.control:
         ctx.cpuq = CpuQuota(ctx.sysmax_util, ctx.args.margin_ratio,
-                            ctx.args.verbose)
-        quota_controller = NaiveController(ctx.cpuq, ctx.args.quota_cycles)
+                            ctx.args.verbose, ctx.lat_thresh)
+        quota_controller = NaiveController(ctx.cpuq, ctx.args.verbose, ctx.args.quota_cycles)
         ctx.llc = LlcOccup(Resource.BUGET_LEV_MIN, ctx.args.exclusive_cat)
         llc_controller = NaiveController(ctx.llc, ctx.args.llc_cycles)
         if ctx.args.disable_cat:
@@ -525,7 +524,7 @@ def main():
         init_data_file(ctx, Analyzer.UTIL_FILE, cols)
 
     ## Create thread to monitor latency
-    threads = [Thread(target=monitor, args=(mon_util_cycle, ctx, ctx.args.latency_interval))]
+    threads = [Thread(target=monitor, args=(ctx, ctx.args.latency_interval))]
 
     if ctx.args.collect_metrics:
         if ctx.args.record:
@@ -544,6 +543,8 @@ def main():
         #threads.append(Thread(target=monitor,
         #                      args=(mon_metric_cycle,
         #                            ctx, ctx.args.metric_interval)))
+
+    ctx.line_number = 0
 
     for thread in threads:
         thread.start()

@@ -16,6 +16,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """ This module defines general resource control methods """
 
+from math import floor, ceil
+
 
 class Resource(object):
     """ Resource Class is abstraction of resource """
@@ -23,10 +25,11 @@ class Resource(object):
     BUGET_LEV_MIN = 0
     BUGET_LEV_MAX = 20
 
-    def __init__(self, init_level=BUGET_LEV_MIN, level_max=BUGET_LEV_MAX):
+    def __init__(self, lat_thresh, init_level=BUGET_LEV_MIN, level_max=BUGET_LEV_MAX):
         self.quota_level = init_level
         self.level_max = level_max
         self.level_min = init_level
+        self.lat_thresh = lat_thresh
 
     def is_min_level(self):
         """ is resource controled in lowest level """
@@ -41,18 +44,29 @@ class Resource(object):
         self.quota_level = level
         self.update()
 
-    def increase_level(self):
+    def increase_level(self, level):
         """ increase resource to next level """
-        self.quota_level = self.quota_level + 1
-        if self.quota_level == self.level_max:
+        self.quota_level += level
+        if self.quota_level >= self.level_max:
             self.quota_level = Resource.BUGET_LEV_FULL
         self.update()
     
-    def reduce_level(self):
-        self.quota_level = self.quota_level - 1
-        if self.quota_level == self.level_min:
+    def reduce_level(self, level):
+        if self.quota_level == -1:
+            self.quota_level = Resource.BUGET_LEV_MAX
+        self.quota_level += level
+        if self.quota_level <= self.level_min:
             self.quota_level = Resource.BUGET_LEV_MIN
         self.update()
+    
+    def level_estimate(self, lat):
+        latency_diff = lat - self.lat_thresh
+        # Adding minus to make it so that positive level = increase, negative = decrease
+        level = -(8 * latency_diff) / self.lat_thresh
+        # Err on the side of QoS
+        level = ceil(level) if level < 0 else floor(level)
+        return level 
+    
 
     def update(self):
         """ update resource level to real value of concrete resource class """

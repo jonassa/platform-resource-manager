@@ -36,10 +36,11 @@ class CpuQuota(Resource):
     CPU_SHARE_LC = 200000
     PREFIX = '/sys/fs/cgroup/cpu/'
 
-    def __init__(self, sysMaxUtil, minMarginRatio, verbose):
-        super(CpuQuota, self).__init__()
+    def __init__(self, sysMaxUtil, minMarginRatio, verbose, lat_threshold):
+        super(CpuQuota, self).__init__(lat_threshold)
         self.min_margin_ratio = minMarginRatio
         self.update_max_sys_util(sysMaxUtil)
+        self.lat_threshold = lat_threshold
         self.update()
         self.verbose = verbose
 
@@ -109,23 +110,27 @@ class CpuQuota(Resource):
             else:
                 self.__set_quota(con, newq)
 
-    def detect_margin_exceed(self, lc_utils, be_utils):
+    def detect_margin_exceed(self, latency, lc_utils, be_utils):
         """
         Detect if BE workload utilization exceed the safe margin
             lc_utils - utilization of all LC workloads
             be_utils - utilization of all BE workloads
         """
+        margin = latency * self.min_margin_ratio
         beq = self.cpu_quota
-        margin = CpuQuota.CPU_QUOTA_CORE * self.min_margin_ratio
 
         if self.verbose:
             print(datetime.now().isoformat(' ') + ' lcUtils: ', lc_utils,
                   ' beUtils: ', be_utils, ' beq: ', beq, ' margin: ', margin)
 
-        exceed = lc_utils == 0 or (lc_utils + be_utils) *\
-            CpuQuota.CPU_QUOTA_PERCENT + margin > self.quota_max
+        
+        exceed = latency > self.lat_threshold
+        hold = margin > self.lat_threshold and not exceed
 
-        hold = (lc_utils + be_utils) * CpuQuota.CPU_QUOTA_PERCENT +\
-            margin + self.quota_step >= self.quota_max
+        if self.verbose:
+            if exceed:
+                print(f"{datetime.now().isoformat(' ')} exceeding threshold {self.lat_threshold}")
+            if hold:
+                print(f"{datetime.now().isoformat(' ')} holding at latency {margin}")
 
         return (exceed, hold)
