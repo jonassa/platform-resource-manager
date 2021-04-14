@@ -27,6 +27,7 @@ class NaiveController:
     def __init__(self, res, verbose, cyc_thresh=3):
         self.res = res
         self.cyc_thresh = cyc_thresh
+        self.cyc = 0
         self.verbose = verbose
 
     def update(self, be_containers, lc_containers, level):
@@ -39,24 +40,30 @@ class NaiveController:
         """
 
         if level < 0:
+            self.cyc = 0
             if self.res.is_min_level():
                 pass
                 # already at min, pass
             else:
-
                 self.res.reduce_level(level)
                 self.res.budgeting(be_containers, lc_containers)
 
             if self.verbose:
-                print(f"{datetime.now().isoformat(' ')} Deceasing BE jobs to level {self.res.quota_level}")
+                print(f"{datetime.now().isoformat(' ')} Decreasing BE jobs to level {self.res.quota_level}")
             
         else:
             if self.res.is_full_level():
                 # no contention, pass
                 pass
-            else:
-                self.res.increase_level(level)
+            elif self.cyc >= self.cyc_thresh:
+                self.cyc = 0
+                self.res.increase_level()
                 self.res.budgeting(be_containers, lc_containers)
+
+
+                if self.verbose:
+                    print(f"{datetime.now().isoformat(' ')} Increasing BE jobs to level {self.res.quota_level}")
+            else:
+                self.cyc += 1
+
             
-            if self.verbose:
-                print(f"{datetime.now().isoformat(' ')} Increasing BE jobs to level {self.res.quota_level}")

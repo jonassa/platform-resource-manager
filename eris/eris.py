@@ -355,6 +355,12 @@ def read_one_line_latency(ctx):
     print(f"Read line number {ctx.line_number % len(content)} with value {line}")
     return int(line)
 
+def read_latency_file():
+    latfile = open('/workspace/memcached/lat_log/latency.txt')
+    content = latfile.readlines()
+    return float(content[0])
+
+
 
 def monitor(ctx, interval):
     """
@@ -367,8 +373,8 @@ def monitor(ctx, interval):
 
     while not ctx.shutdown:
 
-        ctx.lat = read_one_line_latency(ctx)
-        ctx.line_number += 1
+        ctx.lat = read_latency_file()
+        print(f"{datetime.now().isoformat(' ')} Latency is {ctx.lat}") 
 
         level_diff = mon_util_cycle(ctx)
         while True:
@@ -467,12 +473,12 @@ def parse_arguments():
                         quota controller', type=int, default=7)
     parser.add_argument('-k', '--margin-ratio', help='margin ratio related to\
                         latency',
-                        type=float, default=0.95)
+                        type=float, default=0.90)
     parser.add_argument('-t', '--thresh-file', help='threshold model file build\
                         from analyze.py tool', default=Analyzer.THRESH_FILE)
     parser.add_argument('-L', '--latency-interval', help='Latency monitoring\
                         interval', type=float, default=1.0)
-    parser.add_argument('--latency-threshold', help='Latency threshold', type=float, default=20.0)
+    parser.add_argument('--latency-threshold', help='Latency threshold', type=float, default=2.9)
 
     args = parser.parse_args()
     if args.verbose:
@@ -502,7 +508,7 @@ def main():
     init_sysmax(ctx) # Set max recorded CPU utilization during training
 
     ctx.lat = None
-    ctx.lat_thresh = ctx.args.latency_threshold
+    ctx.lat_thresh = ctx.args.latency_threshold * ctx.args.margin_ratio
 
     if ctx.args.enable_prometheus:
         ctx.prometheus.start()
