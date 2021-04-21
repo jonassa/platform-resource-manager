@@ -59,11 +59,11 @@ class LlcOccup(Resource):
         cml = 'pqos -I -a' + '\'pid:' + clsid + '=' + ','.join(cpids) + '\''
         subprocess.Popen(cml, shell=True)
 
-        cml = 'pqos -e' + '\'llc:' + clsid + '=' + bmp[self.quota_level] + '\''
+        cml = 'pqos -e' + '\'llc@0:' + clsid + '=' + bmp[self.quota_level] + '\''
         subprocess.Popen(cml, shell=True)
 
         print(datetime.now().isoformat(' ') + ' set container ' +
-              ','.join(cns) + ' llc occupancy to ' + bmp[self.quota_level])
+              ','.join(cns) + ' llc occupancy to ' + bmp[self.quota_level] + f' level {self.quota_level}')
 
     def budgeting(self, bes, lcs):
         if bes:

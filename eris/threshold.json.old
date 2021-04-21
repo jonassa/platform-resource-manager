@@ -1,0 +1,15 @@
+{
+    "lcutilmax": 1239,
+    "dc-server": {
+        "tdp_threshold": {},
+        "metrics_threshold": []
+    },
+    "dc-warmup": {
+        "tdp_threshold": {},
+        "metrics_threshold": []
+    },
+    "dc-client": {
+        "tdp_threshold": {},
+        "metrics_threshold": []
+    }
+}

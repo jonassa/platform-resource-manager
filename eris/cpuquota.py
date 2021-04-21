@@ -58,7 +58,7 @@ class CpuQuota(Resource):
         monitored
             lc_max_util - maximal LC workloads utilization monitored
         """
-        self.quota_max = lc_max_util * CpuQuota.CPU_QUOTA_PERCENT
+        self.quota_max = 900 * CpuQuota.CPU_QUOTA_PERCENT
         self.quota_step = self.quota_max / Resource.BUGET_LEV_MAX
 
     @staticmethod

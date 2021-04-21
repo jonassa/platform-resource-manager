@@ -1,10 +1,10 @@
 {
     "dc-server": {
-        "cpus": 18,
+        "cpus": 9,
         "type": "latency_critical"
     },
     "stress": {
-        "cpus": 18,
+        "cpus": 9,
         "type": "best_efforts"
     }
 }
