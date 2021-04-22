@@ -63,7 +63,7 @@ class LlcOccup(Resource):
         subprocess.Popen(cml, shell=True)
 
         print(datetime.now().isoformat(' ') + ' set container ' +
-              ','.join(cns) + ' llc occupancy to ' + bmp[self.quota_level])
+              ','.join(cns) + ' llc occupancy to ' + bmp[self.quota_level] + f' level {self.quota_level}')
 
     def budgeting(self, bes, lcs):
         if bes:
