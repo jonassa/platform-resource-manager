@@ -57,7 +57,7 @@ class NaiveController:
                 pass
             elif self.cyc >= self.cyc_thresh:
                 self.cyc = 0
-                self.res.increase_level()
+                self.res.increase_level(level)
                 self.res.budgeting(be_containers, lc_containers)
 
 
