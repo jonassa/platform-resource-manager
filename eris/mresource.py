@@ -44,9 +44,9 @@ class Resource(object):
         self.quota_level = level
         self.update()
 
-    def increase_level(self, level):
+    def increase_level(self):
         """ increase resource to next level """
-        self.quota_level += level
+        self.quota_level += 1
         if self.quota_level >= self.level_max:
             self.quota_level = Resource.BUGET_LEV_FULL
         self.update()
