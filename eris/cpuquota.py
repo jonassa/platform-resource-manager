@@ -25,6 +25,7 @@ from datetime import datetime
 from mresource import Resource
 
 
+
 class CpuQuota(Resource):
     """ This class is the resource class of CPU cycle """
     CPU_QUOTA_DEFAULT = -1

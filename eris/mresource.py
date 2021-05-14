@@ -17,6 +17,7 @@
 """ This module defines general resource control methods """
 
 from math import floor, ceil
+from datetime import datetime
 
 
 class Resource(object):
@@ -65,6 +66,9 @@ class Resource(object):
         level = -(8 * latency_diff) / self.lat_thresh
         # Err on the side of QoS
         level = ceil(level) if level < 0 else floor(level)
+
+        print(f"{datetime.now().isoformat(' ')} Latency: {lat}, LatDiff: {latency_diff}, Levels: {level}")
+
         return level 
     
 

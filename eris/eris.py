@@ -374,7 +374,6 @@ def monitor(ctx, interval):
     while not ctx.shutdown:
 
         ctx.lat = read_latency_file()
-        print(f"{datetime.now().isoformat(' ')} Latency is {ctx.lat}") 
 
         level_diff = mon_util_cycle(ctx)
         while True:
