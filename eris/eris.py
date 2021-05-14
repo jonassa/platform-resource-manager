@@ -478,7 +478,7 @@ def parse_arguments():
                         from analyze.py tool', default=Analyzer.THRESH_FILE)
     parser.add_argument('-L', '--latency-interval', help='Latency monitoring\
                         interval', type=float, default=1.0)
-    parser.add_argument('--latency-threshold', help='Latency threshold', type=float, default=2.9)
+    parser.add_argument('--latency-threshold', help='Latency threshold', type=float, default=4.764)
 
     args = parser.parse_args()
     if args.verbose:
