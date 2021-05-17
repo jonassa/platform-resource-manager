@@ -46,6 +46,8 @@ from prometheus import PrometheusClient
 from pgos import Pgos
 from analyze.analyzer import Metric, Analyzer, ThreshType
 
+from controller import CONTROLLER_MAP
+
 __version__ = 0.8
 
 
@@ -67,13 +69,11 @@ class Context(object):
         self.llc = None
         self.lat = None
         self.lat_thresh = None
-        self.controllers = {}
+        self.controller = None
         self.util_cons = dict()
         self.metric_cons = dict()
         self.analyzer = None
         self.cgroup_driver = 'cgroupfs'
-        self.last_controller = None
-        self.line_number = 0
 
     @property
     def docker_client(self):
@@ -190,8 +190,8 @@ def set_metrics(ctx, timestamp, data):
                                      container_contended)
     if findbe and ctx.args.control:
         for contention, flag in contention.items():
-            if contention in ctx.controllers:
-                ctx.controllers[contention].update(bes, lcs, flag, False)
+            # if contention in ctx.controllers:
+                # ctx.controllers[contention].update(bes, lcs, flag, False)
 
 
 def remove_finished_containers(cids, consmap):
@@ -235,6 +235,7 @@ def mon_util_cycle(ctx):
     be_utils = 0
     date = datetime.now().isoformat()
     bes = []
+    lcs = []
     newbe = False
     containers = ctx.docker_client.containers.list()
     remove_finished_containers({c.id for c in containers}, ctx.util_cons)
@@ -244,6 +245,7 @@ def mon_util_cycle(ctx):
         name = container.name
         pids = list_pids(container)
         key = cid if ctx.args.key_cid else name
+        
         if cid in ctx.util_cons: # If container already registered
             con = ctx.util_cons[cid]
         else:                    # If not, create the container object and set default share
@@ -256,6 +258,7 @@ def mon_util_cycle(ctx):
                     ctx.cpuq.set_share(con, CpuQuota.CPU_SHARE_BE)
                 else:
                     ctx.cpuq.set_share(con, CpuQuota.CPU_SHARE_LC)
+        
         con.update_cpu_usage()
         if ctx.args.record:
             with open(Analyzer.UTIL_FILE, 'a') as utilf:
@@ -264,6 +267,7 @@ def mon_util_cycle(ctx):
 
         if key in ctx.lc_set:
             lc_utils = lc_utils + con.utils
+            lcs.append(con)
 
         if key in ctx.be_set:
             findbe = True
@@ -276,30 +280,22 @@ def mon_util_cycle(ctx):
             utilf.write(date + ',,lcs,' + str(lc_utils) + '\n')
             utilf.write(date + ',,loadavg1m,' + str(loadavg) + '\n')
 
-    ## REGULATE BY LATENCY HERE
-
-    #if lc_utils > ctx.sysmax_util:
-    #    ctx.sysmax_util = lc_utils
-    #    ctx.analyzer.update_lcutilmax(lc_utils)
-    #    if ctx.args.control:
-    #        ctx.cpuq.update_max_sys_util(lc_utils)
+    if lc_utils > ctx.sysmax_util:
+       ctx.sysmax_util = lc_utils
+       ctx.analyzer.update_lcutilmax(lc_utils)
+       if ctx.args.control:
+           ctx.cpuq.update_lcutilmax(lc_utils)
 
     if newbe:
-        ctx.cpuq.budgeting(bes, [])
-
-    lowest = ctx.cpuq.is_min_level()
-    levels = 0
+        ctx.cpuq.budgeting(bes)
 
     if findbe and ctx.args.control:
-        levels = ctx.controllers[Contention.CPU_CYC].res.level_estimate(ctx.lat)
+        ctx.controller.update(bes, lcs, ctx.lat)
 
-        if not ctx.args.enable_hold:
-            hold = False
+        # levels = ctx.controller.cpuq.level_estimate(ctx.lat)
+        # if levels != 0:
+        #     ctx.controllers[Contention.CPU_CYC].update(bes, [], levels)
 
-        if levels != 0:
-            ctx.controllers[Contention.CPU_CYC].update(bes, [], levels)
-    
-    return {"level_diff": levels}
 
 def mon_metric_cycle(ctx):
     """
@@ -348,18 +344,10 @@ def mon_metric_cycle(ctx):
         if data:
             set_metrics(ctx, timestamp, data)
 
-def read_one_line_latency(ctx):
-    latfile = open('dummy_latency.txt')
-    content = latfile.readlines()
-    line = content[ctx.line_number % len(content)]
-    print(f"Read line number {ctx.line_number % len(content)} with value {line}")
-    return int(line)
-
 def read_latency_file():
     latfile = open('/workspace/memcached/lat_log/latency.txt')
     content = latfile.readlines()
     return float(content[0])
-
 
 
 def monitor(ctx, interval):
@@ -374,8 +362,8 @@ def monitor(ctx, interval):
     while not ctx.shutdown:
 
         ctx.lat = read_latency_file()
+        mon_util_cycle(ctx)
 
-        level_diff = mon_util_cycle(ctx)
         while True:
             next_time += interval
             delta = next_time - time.time()
@@ -477,7 +465,8 @@ def parse_arguments():
                         from analyze.py tool', default=Analyzer.THRESH_FILE)
     parser.add_argument('-L', '--latency-interval', help='Latency monitoring\
                         interval', type=float, default=1.0)
-    parser.add_argument('--latency-threshold', help='Latency threshold', type=float, default=2.9)
+    parser.add_argument('--latency-threshold', help='Latency threshold', type=float, default=4.764)
+    parser.add_argument('--controller', help='Which latency-based controller/algorithm to use', default='proportional')
 
     args = parser.parse_args()
     if args.verbose:
@@ -507,23 +496,19 @@ def main():
     init_sysmax(ctx) # Set max recorded CPU utilization during training
 
     ctx.lat = None
-    ctx.lat_thresh = ctx.args.latency_threshold * ctx.args.margin_ratio
-
-    if ctx.args.enable_prometheus:
-        ctx.prometheus.start()
+    # TODO: Let's handle this in the controller
+    # ctx.lat_thresh = ctx.args.latency_threshold * ctx.args.margin_ratio
+    ctx.lat_thresh = ctx.args.latency_threshold
 
     if ctx.args.control:
-        ctx.cpuq = CpuQuota(ctx.sysmax_util, ctx.args.margin_ratio,
-                            ctx.args.verbose, ctx.lat_thresh)
-        quota_controller = NaiveController(ctx.cpuq, ctx.args.verbose, ctx.args.quota_cycles)
-        ctx.llc = LlcOccup(Resource.BUGET_LEV_MIN, ctx.args.exclusive_cat)
-        llc_controller = NaiveController(ctx.llc, ctx.args.llc_cycles)
+        ctx.cpuq = CpuQuota(ctx.sysmax_util)
         if ctx.args.disable_cat:
-            ctx.llc = LlcOccup(Resource.BUGET_LEV_FULL, exclusive=False)
-            ctx.controllers = {Contention.CPU_CYC: quota_controller}
+            ctx.llc = LlcOccup(Resource.BUDGET_LEV_FULL, exclusive=False)
         else:
-            ctx.controllers = {Contention.CPU_CYC: quota_controller,
-                               Contention.LLC: llc_controller}
+            ctx.llc = LlcOccup(Resource.BUDGET_LEV_MIN, ctx.args.exclusive_cat)
+
+        ctx.controller = CONTROLLER_MAP[ctx.args.controller](ctx.cpuq, ctx.llc, ctx.lat_thresh, ctx.args.margin_ratio, ctx.args.enable_hold)
+
     if ctx.args.record:
         cols = ['time', 'cid', 'name', Metric.UTIL]
         init_data_file(ctx, Analyzer.UTIL_FILE, cols)
@@ -545,11 +530,10 @@ def main():
             print('error in libpgos init, error code: ' + str(ret))
         else:
             ctx.pgos_inited = True
-        #threads.append(Thread(target=monitor,
+
+        # threads.append(Thread(target=monitor,
         #                      args=(mon_metric_cycle,
         #                            ctx, ctx.args.metric_interval)))
-
-    ctx.line_number = 0
 
     for thread in threads:
         thread.start()

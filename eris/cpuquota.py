@@ -25,7 +25,6 @@ from datetime import datetime
 from mresource import Resource
 
 
-
 class CpuQuota(Resource):
     """ This class is the resource class of CPU cycle """
     CPU_QUOTA_DEFAULT = -1
@@ -37,34 +36,33 @@ class CpuQuota(Resource):
     CPU_SHARE_LC = 200000
     PREFIX = '/sys/fs/cgroup/cpu/'
 
-    def __init__(self, sysMaxUtil, minMarginRatio, verbose, lat_threshold):
-        super(CpuQuota, self).__init__(lat_threshold)
-        self.min_margin_ratio = minMarginRatio
-        self.update_max_sys_util(sysMaxUtil)
-        self.lat_threshold = lat_threshold
-        self.update()
-        self.verbose = verbose
+    def __init__(self, lcutilmax):
+        super().__init__(level_max=100)
+        self.lcutilmax = lcutilmax
+        
+    def update_lcutilmax(self, lcutilmax):
+        self.lcutilmax = lcutilmax
+    
+    @property
+    def quota_max(self):
+        return self.lcutilmax * CpuQuota.CPU_QUOTA_PERCENT
+    
+    @property
+    def quota_step(self):
+        return int(self.quota_max / self.level_max)
 
-    def update(self):
+    @property
+    def cpu_quota(self):
         if self.is_full_level():
-            self.cpu_quota = CpuQuota.CPU_QUOTA_DEFAULT
+            return CpuQuota.CPU_QUOTA_DEFAULT
         elif self.is_min_level():
-            self.cpu_quota = CpuQuota.CPU_QUOTA_MIN
+            return CpuQuota.CPU_QUOTA_MIN
         else:
-            self.cpu_quota = self.quota_level * int(self.quota_step)
-
-    def update_max_sys_util(self, lc_max_util):
-        """
-        Update quota max and step based on given LC system maximal utilization
-        monitored
-            lc_max_util - maximal LC workloads utilization monitored
-        """
-        self.quota_max = 900 * CpuQuota.CPU_QUOTA_PERCENT
-        self.quota_step = self.quota_max / Resource.BUGET_LEV_MAX
+            return self.quota_level * self.quota_step
 
     @staticmethod
     def __get_cfs_period(container):
-        path = CpuQuota.PREFIX + container.parent_path + container.con_path +\
+        path = CpuQuota.PREFIX + conainer.parent_path + container.con_path + \
                 '/cpu.cfs_period_us'
         with open(path) as perdf:
             res = perdf.readline()
@@ -76,13 +74,12 @@ class CpuQuota(Resource):
 
     def __set_quota(self, container, quota):
         period = self.__get_cfs_period(container)
-        if period != 0 and quota != CpuQuota.CPU_QUOTA_DEFAULT\
-           and quota != CpuQuota.CPU_QUOTA_MIN:
+        if period != 0 and quota != CpuQuota.CPU_QUOTA_DEFAULT and quota != CpuQuota.CPU_QUOTA_MIN:
             rquota = int(quota * period / CpuQuota.CPU_QUOTA_CORE)
         else:
             rquota = quota
 
-        path = CpuQuota.PREFIX + container.parent_path +\
+        path = CpuQuota.PREFIX + container.parent_path + \
             container.con_path + '/cpu.cfs_quota_us'
         with open(path, 'w') as shrf:
             shrf.write(str(rquota))
@@ -95,7 +92,7 @@ class CpuQuota(Resource):
         Set CPU share in container
             share - given CPU share value
         """
-        path = CpuQuota.PREFIX + container.parent_path +\
+        path = CpuQuota.PREFIX + container.parent_path + \
             container.con_path + '/cpu.shares'
         with open(path, 'w') as shrf:
             shrf.write(str(share))
@@ -103,35 +100,10 @@ class CpuQuota(Resource):
         print(datetime.now().isoformat(' ') + ' set container ' +
               container.name + ' cpu share to ' + str(share))
 
-    def budgeting(self, bes, lcs):
-        newq = int(self.cpu_quota / len(bes))
+    def budgeting(self, bes, _):
+        quota_per_container = int(self.cpu_quota / len(bes))
         for con in bes:
             if self.is_min_level() or self.is_full_level():
                 self.__set_quota(con, self.cpu_quota)
             else:
-                self.__set_quota(con, newq)
-
-    def detect_margin_exceed(self, latency, lc_utils, be_utils):
-        """
-        Detect if BE workload utilization exceed the safe margin
-            lc_utils - utilization of all LC workloads
-            be_utils - utilization of all BE workloads
-        """
-        margin = latency * self.min_margin_ratio
-        beq = self.cpu_quota
-
-        if self.verbose:
-            print(datetime.now().isoformat(' ') + ' lcUtils: ', lc_utils,
-                  ' beUtils: ', be_utils, ' beq: ', beq, ' margin: ', margin)
-
-        
-        exceed = latency > self.lat_threshold
-        hold = margin > self.lat_threshold and not exceed
-
-        if self.verbose:
-            if exceed:
-                print(f"{datetime.now().isoformat(' ')} exceeding threshold {self.lat_threshold}")
-            if hold:
-                print(f"{datetime.now().isoformat(' ')} holding at latency {margin}")
-
-        return (exceed, hold)
+                self.__set_quota(con, quota_per_container)

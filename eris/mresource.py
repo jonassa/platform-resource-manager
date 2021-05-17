@@ -22,60 +22,41 @@ from datetime import datetime
 
 class Resource(object):
     """ Resource Class is abstraction of resource """
-    BUGET_LEV_FULL = -1
-    BUGET_LEV_MIN = 0
-    BUGET_LEV_MAX = 20
+    BUDGET_LEV_FULL = -1
+    BUDGET_LEV_MIN = 0
+    BUDGET_LEV_MAX = 20
 
-    def __init__(self, lat_thresh, init_level=BUGET_LEV_MIN, level_max=BUGET_LEV_MAX):
+    def __init__(self, init_level=BUDGET_LEV_MIN, level_max=BUDGET_LEV_MAX):
         self.quota_level = init_level
-        self.level_max = level_max
-        self.level_min = init_level
-        self.lat_thresh = lat_thresh
+        self.level_max = level_max # this is necessary because LLC sets max level based on cbm
 
     def is_min_level(self):
         """ is resource controled in lowest level """
-        return self.quota_level == Resource.BUGET_LEV_MIN
+        return self.quota_level == Resource.BUDGET_LEV_MIN
 
     def is_full_level(self):
         """ is resource controled in full level """
-        return self.quota_level == Resource.BUGET_LEV_FULL
+        return self.quota_level == Resource.BUDGET_LEV_FULL
 
     def set_level(self, level):
         """ set resource in given level """
         self.quota_level = level
-        self.update()
 
     def increase_level(self):
-        """ increase resource to next level """
+        """ increase resource level by one step"""
         self.quota_level += 1
         if self.quota_level >= self.level_max:
-            self.quota_level = Resource.BUGET_LEV_FULL
-        self.update()
+            self.quota_level = Resource.BUDGET_LEV_FULL
     
-    def reduce_level(self, level):
-        if self.quota_level == -1:
-            self.quota_level = Resource.BUGET_LEV_MAX
-        self.quota_level += level
-        if self.quota_level <= self.level_min:
-            self.quota_level = Resource.BUGET_LEV_MIN
-        self.update()
-    
-    def level_estimate(self, lat):
-        latency_diff = lat - self.lat_thresh
-        # Adding minus to make it so that positive level = increase, negative = decrease
-        level = -(8 * latency_diff) / self.lat_thresh
-        # Err on the side of QoS
-        level = ceil(level) if level < 0 else floor(level)
-
-        print(f"{datetime.now().isoformat(' ')} Latency: {lat}, LatDiff: {latency_diff}, Levels: {level}")
-
-        return level 
-    
-
-    def update(self):
-        """ update resource level to real value of concrete resource class """
-        pass
+    def reduce_level(self):
+        """ reduce resource level by one step """
+        if self.is_full_level():
+            self.quota_level = self.level_max
+        elif self.is_min_level():
+            pass
+        else:
+            self.quota_level -= 1
 
     def budgeting(self, bes, lcs):
-        """ control resouce based on current resource level """
+        """ set real resource levels based on quota level """
         pass

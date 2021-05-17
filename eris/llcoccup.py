@@ -48,14 +48,13 @@ class LlcOccup(Resource):
             setbits = [bit for bit in cbm_bin[2:] if bit == '1']
             return len(setbits)
 
-    def _budgeting(self, containers, clsid, is_be):
+    def _budgeting(self, containers, clsid, bmp):
         cpids = []
         cns = []
         for con in containers:
             cpids.append(','.join(con.pids))
             cns.append(con.name)
 
-        bmp = self.be_bmp if is_be else self.lc_bmp
         cml = 'pqos -I -a' + '\'pid:' + clsid + '=' + ','.join(cpids) + '\''
         subprocess.Popen(cml, shell=True)
 
@@ -67,6 +66,6 @@ class LlcOccup(Resource):
 
     def budgeting(self, bes, lcs):
         if bes:
-            self._budgeting(bes, '1', True)
+            self._budgeting(bes, '1', self.be_bmp)
         if lcs:
-            self._budgeting(lcs, '2', False)
+            self._budgeting(lcs, '2', self.lc_bmp)
