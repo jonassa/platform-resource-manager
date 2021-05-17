@@ -67,7 +67,7 @@ class Resource(object):
         # Adding minus to make it so that positive level = increase, negative = decrease
         level = -(8 * latency_diff) / self.lat_thresh 
         # Err on the side of QoS
-        level = ceil(level) if level < 0 else floor(level)
+        level = floor(level)
 
         print(f"{datetime.now().isoformat(' ')} Latency: {lat}, LatDiff: {latency_diff}, Level: {level}")
 
