@@ -46,10 +46,15 @@ from prometheus import PrometheusClient
 from pgos import Pgos
 from analyze.analyzer import Metric, Analyzer, ThreshType
 
-from controller import CONTROLLER_MAP
+from controller import *
 
 __version__ = 0.8
 
+
+CONTROLLER_MAP = {
+    'proportional': ProportionalController,
+    'step': StepController,
+}
 
 
 class Context(object):
@@ -188,11 +193,10 @@ def set_metrics(ctx, timestamp, data):
                    contention_type != Contention.UNKN:
                     detect_contender(ctx.metric_cons, contention_type,
                                      container_contended)
-    if findbe and ctx.args.control:
-        for contention, flag in contention.items():
+    # if findbe and ctx.args.control:
+        # for contention, flag in contention.items():
             # if contention in ctx.controllers:
                 # ctx.controllers[contention].update(bes, lcs, flag, False)
-
 
 def remove_finished_containers(cids, consmap):
     """
@@ -507,7 +511,7 @@ def main():
         else:
             ctx.llc = LlcOccup(Resource.BUDGET_LEV_MIN, ctx.args.exclusive_cat)
 
-        ctx.controller = CONTROLLER_MAP[ctx.args.controller](ctx.cpuq, ctx.llc, ctx.lat_thresh, ctx.args.margin_ratio, ctx.args.enable_hold)
+        ctx.controller = CONTROLLER_MAP[ctx.args.controller](ctx.cpuq, ctx.llc, ctx.lat_thresh, ctx.args.margin_ratio)
 
     if ctx.args.record:
         cols = ['time', 'cid', 'name', Metric.UTIL]

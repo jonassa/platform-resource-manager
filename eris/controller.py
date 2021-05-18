@@ -4,12 +4,6 @@ from mresource import Resource
 from collections import deque
 from datetime import datetime
 
-CONTROLLER_MAP = {
-    'proportional': ProportionalController,
-    'step': StepController,
-}
-
-
 class Controller(object):
     """ Generic latency-based controller """
 
