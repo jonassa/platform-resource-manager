@@ -1,121 +1,191 @@
 """ This module implements latency-based resource controllers """
 
-# from mresource import Resource
 from collections import deque
 from datetime import datetime
 from math import floor, ceil
 
-class Controller(object):
+
+class Controller():
     """ Generic latency-based controller """
 
-    BUFFER_SIZE = 1024
+    # 4 min, 16 sec with latency interval = 1 sec
+    BUFFER_SIZE = 256
 
-    def __init__(self, cpuq, llc, lat_thresh, margin_ratio):
+    def __init__(self, cpuq, llc, target, margin):
         self.cpuq = cpuq
         self.llc = llc
-        self.lat_thresh = lat_thresh
-        self.margin_ratio = margin_ratio
+        self.target = target
+        self.margin = margin
+
         self.buffer = deque(maxlen=self.BUFFER_SIZE)
+        self.be_containers = None
+        self.lc_containers = None
 
     def update(self, be_containers, lc_containers, lat):
-        """
-        Update the Controller with the currently active BE and LC containers,
-        and the current latency of the LC service. Decide how the CPU quota and
-        LLC resources should be partitioned.
-        """
+        self.be_containers = be_containers
+        self.lc_containers = lc_containers
+        self.buffer.append(lat)
+        self.regulate(lat)
+
+    def regulate(self, lat):
+        """ Decide how to allocate CPU/LLC based on the current/previous latency, or other metrics """
+        pass
+
+    def step_up(self, resource):
+        if not resource.is_full_level():
+            resource.increase_level()
+            resource.budgeting(self.be_containers, self.lc_containers)
+            print(f"{datetime.now().isoformat(' ')} Increasing BE CPU quota to level {resource.quota_level}")
+
+    def step_down(self, resource):
+        if not resource.is_min_level():
+            resource.reduce_level()
+            resource.budgeting(self.be_containers, self.lc_containers)
+            print(f"{datetime.now().isoformat(' ')} Decreasing BE CPU quota to level {resource.quota_level}")
+
+    def step_by(self, resource, delta):
+        if delta == 0:
+            return
+        if resource.is_full_level():
+            if delta < 0:
+                # Treat FULL as MAX + 1
+                level = resource.level_max + 1 + delta
+            else:
+                return
+        else:
+            level = max(resource.BUDGET_LEV_MIN, resource.quota_level + delta)
+            if level > resource.level_max:
+                level = resource.BUDGET_LEV_FULL
+        
+        resource.set_level(level)
+        resource.budgeting(self.be_containers, self.lc_containers)
+        print(f"{datetime.now().isoformat(' ')} Setting BE CPU quota to level {resource.quota_level}")
+
+    def step_to(self, resource, level):
+        level = max(resource.BUDGET_LEV_MIN, level)
+        if level > resource.level_max:
+            level = resource.BUDGET_LEV_FULL
+
+        resource.set_level(level)
+        resource.budgeting(self.be_containers, self.lc_containers)
+        print(f"{datetime.now().isoformat(' ')} Setting BE CPU quota to level {resource.quota_level}")
+
+
+class HeuristicController(Controller):
+    """ Logics and stuff """
+
+    LOWER_SLACK  = 0.1
+    MIDDLE_SLACK = 0.5
+    UPPER_SLACK  = 0.9
+
+    def __init__(self, cpuq, llc, target, margin):
+        super().__init__(cpuq, llc, target, margin)
+
+    def update(self, be_containers, lc_containers, lat):
+        self.be_containers = be_containers
+        self.lc_containers = lc_containers
+
+        slack = (self.target - lat) / self.target
+        self.buffer.append(slack)
+        self.regulate(slack)
+
+    def regulate(self, slack):
         pass
 
 
-def step_up(resource, be_containers, lc_containers):
-    if not resource.is_full_level():
-        resource.increase_level()
-        resource.budgeting(be_containers, lc_containers)
-        print(f"{datetime.now().isoformat(' ')} Increasing BE jobs to level {resource.quota_level}")
+class PIDController(Controller):
+    """ PID-like controller """
 
-def step_down(resource, be_containers, lc_containers):
-    if not resource.is_min_level():
-        resource.reduce_level(level)
-        resource.budgeting(be_containers, lc_containers)
-        print(f"{datetime.now().isoformat(' ')} Decreasing BE jobs to level {resource.quota_level}")
+    # TODO: either do proper tuning, or come up with some way to estimate while running
+    Kp, Ki, Kd = (1.0, 1.0, 1.0)
 
-def step_by(resource, be_containers, lc_containers, delta):
-    if delta == 0:
-        return
-    if resource.is_full_level():
-        if delta < 0:
-            # Treat FULL as MAX + 1
-            # level = resource.level_max + 1 + delta
-            # Treat FULL as = MAX (this is what the default resource code does?)
-            level = resource.level_max + delta
-        else: # Already FULL, do nothing
-            return
-    else:
-        level = max(resource.BUDGET_LEV_MIN, resource.quota_level + delta)
-        if level >= resource.level_max: # >= max = full
-            level = resource.BUDGET_LEV_FULL
-    
-    resource.set_level(level)
-    resource.budgeting(be_containers, lc_containers)
-    print(f"{datetime.now().isoformat(' ')} Setting BE jobs to level {resource.quota_level}")
+    # TODO: pass from ctx.args
+    SAMPLING_INTERVAL = 1 
+
+    def __init__(self, cpuq, llc, target, margin):
+        super().__init__(cpuq, llc, target, margin)
+
+    def update(self, be_containers, lc_containers, lat):
+        self.be_containers = be_containers
+        self.lc_containers = lc_containers
+
+        error = self.target - lat
+        self.buffer.append(error)
+        self.regulate(error)
+
+    def regulate(self, error):
+        proportional = Kp * error
+        integral = Ki * sum(self.buffer) * SAMPLING_INTERVAL
+
+        try:
+            derivative = Kd * (error - self.buffer[-2]) / SAMPLING_INTERVAL
+        except IndexError:
+            derivative = 0
+
+        output = proportional + integral + derivative
+
+        # TODO: map output to quota level
+        print(f"output={output}")
 
 
 class ProportionalController(Controller):
     """ Linear scaling controller """
+
     CYCLE_THRESHOLD = 3
 
-    def __init__(self, cpuq, llc, lat_thresh, margin_ratio):
-        super().__init__(cpuq, llc, lat_thresh, margin_ratio)
+    def __init__(self, cpuq, llc, target, margin):
+        super().__init__(cpuq, llc, target, margin)
+        self.target = target * margin
         self.cycles = 0
-        print("Controller initiliazed")
 
     def _level_estimate(self, lat):
-        latency_diff = lat - self.lat_thresh
-        level_change = floor(-8 * latency_diff / self.lat_thresh)
-        print(f"{datetime.now().isoformat(' ')} Latency: {lat}, LatDiff: {latency_diff}, Levels: {level_change}")
+        latency_diff = lat - self.target
+        level_change = floor(-8 * latency_diff / self.target)
+        print(f"{datetime.now().isoformat(' ')} Latency: {lat}, LatDiff: {latency_diff}, Level change: {level_change}")
         return level_change
 
-    def update(self, be_containers, lc_containers, lat):
-        print(f"Latency = {lat}")
+    def regulate(self, lat):
         level_change = self._level_estimate(lat)
-        print(f"Level change = {level_change}")
 
         if level_change < 0:
             self.cycles = 0
-            step_by(self.cpuq, be_containers, lc_containers, level_change)
+            self.step_by(self.cpuq, level_change)
         
         if level_change > 0:
             self.cycles += 1
             if self.cycles >= self.CYCLE_THRESHOLD:
                 self.cycles = 0
-                step_by(self.cpuq, be_containers, lc_containers, level_change)
+                self.step_by(self.cpuq, level_change)
 
 
 class StepController(Controller):
     """ Single-step controller """
+
     CYCLE_THRESHOLD = 3
 
-    def __init__(self, cpuq, llc, lat_thresh, margin_ratio):
-        super().__init__(cpuq, llc, lat_thresh, margin_ratio)
+    def __init__(self, cpuq, llc, target, margin):
+        super().__init__(cpuq, llc, target, margin)
+        self.target = target * margin
         self.cycles = 0
 
     def _level_estimate(self, lat):
-        latency_diff = lat - self.lat_thresh
-        level_change = floor(-8 * latency_diff / self.lat_thresh)
-        print(f"{datetime.now().isoformat(' ')} Latency: {lat}, LatDiff: {latency_diff}, Levels: {level_change}")
+        latency_diff = lat - self.target
+        level_change = floor(-8 * latency_diff / self.target)
+        print(f"{datetime.now().isoformat(' ')} Latency: {lat}, LatDiff: {latency_diff}, Level change: {level_change}")
         return level_change
 
-    def update(self, be_containers, lc_containers, lat):
+    def regulate(self, lat):
         level_change = self._level_estimate(lat)
 
         if level_change < 0:
             self.cycles = 0
-            step_down(self.cpuq, be_containers, lc_containers)
+            self.step_down(self.cpuq)
 
         if level_change > 0:
             self.cycles += 1
             if self.cycles >= self.CYCLE_THRESHOLD:
                 self.cycles = 0
-                step_up(self.cpuq, be_containers, lc_containers)
+                self.step_up(self.cpuq)
 
 
 # def detect_margin_exceed(self, latency, lc_utils, be_utils):
