@@ -291,14 +291,10 @@ def mon_util_cycle(ctx):
            ctx.cpuq.update_lcutilmax(lc_utils)
 
     if newbe:
-        ctx.cpuq.budgeting(bes)
+        ctx.cpuq.budgeting(bes, lcs)
 
     if findbe and ctx.args.control:
         ctx.controller.update(bes, lcs, ctx.lat)
-
-        # levels = ctx.controller.cpuq.level_estimate(ctx.lat)
-        # if levels != 0:
-        #     ctx.controllers[Contention.CPU_CYC].update(bes, [], levels)
 
 
 def mon_metric_cycle(ctx):

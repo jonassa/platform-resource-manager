@@ -1,8 +1,9 @@
 """ This module implements latency-based resource controllers """
 
-from mresource import Resource
+# from mresource import Resource
 from collections import deque
 from datetime import datetime
+from math import floor, ceil
 
 class Controller(object):
     """ Generic latency-based controller """
@@ -65,6 +66,7 @@ class ProportionalController(Controller):
     def __init__(self, cpuq, llc, lat_thresh, margin_ratio):
         super().__init__(cpuq, llc, lat_thresh, margin_ratio)
         self.cycles = 0
+        print("Controller initiliazed")
 
     def _level_estimate(self, lat):
         latency_diff = lat - self.lat_thresh
@@ -73,7 +75,9 @@ class ProportionalController(Controller):
         return level_change
 
     def update(self, be_containers, lc_containers, lat):
+        print(f"Latency = {lat}")
         level_change = self._level_estimate(lat)
+        print(f"Level change = {level_change}")
 
         if level_change < 0:
             self.cycles = 0
