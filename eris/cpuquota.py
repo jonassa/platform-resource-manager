@@ -62,7 +62,7 @@ class CpuQuota(Resource):
 
     @staticmethod
     def __get_cfs_period(container):
-        path = CpuQuota.PREFIX + conainer.parent_path + container.con_path + \
+        path = CpuQuota.PREFIX + container.parent_path + container.con_path + \
                 '/cpu.cfs_period_us'
         with open(path) as perdf:
             res = perdf.readline()

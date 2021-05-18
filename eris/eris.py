@@ -291,7 +291,7 @@ def mon_util_cycle(ctx):
            ctx.cpuq.update_lcutilmax(lc_utils)
 
     if newbe:
-        ctx.cpuq.budgeting(bes)
+        ctx.cpuq.budgeting(bes, lcs)
 
     if findbe and ctx.args.control:
         ctx.controller.update(bes, lcs, ctx.lat)

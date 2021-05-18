@@ -1,8 +1,9 @@
 """ This module implements latency-based resource controllers """
 
-from mresource import Resource
+# from mresource import Resource
 from collections import deque
 from datetime import datetime
+from math import floor, ceil
 
 class Controller(object):
     """ Generic latency-based controller """
