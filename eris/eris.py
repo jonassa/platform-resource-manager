@@ -54,6 +54,8 @@ __version__ = 0.8
 CONTROLLER_MAP = {
     'proportional': ProportionalController,
     'step': StepController,
+    'pid': PIDController,
+    'heuristic': HeuristicController,
 }
 
 
