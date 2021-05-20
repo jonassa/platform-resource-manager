@@ -114,11 +114,11 @@ class PIDController(Controller):
         self.regulate(error)
 
     def regulate(self, error):
-        proportional = Kp * error
-        integral = Ki * sum(self.buffer) * SAMPLING_INTERVAL
+        proportional = self.Kp * error
+        integral = self.Ki * sum(self.buffer) * self.SAMPLING_INTERVAL
 
         try:
-            derivative = Kd * (error - self.buffer[-2]) / SAMPLING_INTERVAL
+            derivative = self.Kd * (error - self.buffer[-2]) / self.SAMPLING_INTERVAL
         except IndexError:
             derivative = 0
 
