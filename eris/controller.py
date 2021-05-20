@@ -56,7 +56,7 @@ class Controller():
             level = max(resource.BUDGET_LEV_MIN, resource.quota_level + delta)
             if level > resource.level_max:
                 level = resource.BUDGET_LEV_FULL
-        
+
         resource.set_level(level)
         resource.budgeting(self.be_containers, self.lc_containers)
         print(f"{datetime.now().isoformat(' ')} Setting BE CPU quota to level {resource.quota_level}")
@@ -72,14 +72,17 @@ class Controller():
 
 
 class HeuristicController(Controller):
-    """ Logics and stuff """
 
     LOWER_SLACK  = 0.1
-    MIDDLE_SLACK = 0.5
-    UPPER_SLACK  = 0.9
+    UPPER_SLACK  = 0.6
+    WAIT_CYCLES  = 5
 
     def __init__(self, cpuq, llc, target, margin):
         super().__init__(cpuq, llc, target, margin)
+        self.cycles = 0
+        self.mark = cpuq.level_max
+        self.pre_level = cpuq.quota_level
+        self.recovery = False
 
     def update(self, be_containers, lc_containers, lat):
         self.be_containers = be_containers
@@ -90,7 +93,31 @@ class HeuristicController(Controller):
         self.regulate(slack)
 
     def regulate(self, slack):
-        pass
+        if slack < self.LOWER_SLACK:
+            self.cycles = 0
+            self.mark = self.cpuq.quota_level
+            if self.recovery:
+                self.step_to(self.cpuq, self.cpuq.BUDGET_LEV_MIN)
+            else:
+                self.step_to(self.cpuq, self.pre_level)
+                self.recovery = True
+            print(f"Violation at level {self.mark} with {slack} slack. Stepping back to pre_level={self.pre_level}")
+        else:
+            self.cycles += 1
+            if self.cycles >= self.WAIT_CYCLES:
+                self.cycles = 0
+                self.recovery = False
+                range = self.mark - self.cpuq.quota_level
+                if (range <= 0):
+                    print(f"Ignoring RANGE={range}!")
+                else:
+                    print(f"Stepping up by half-range (range={range})")
+                    self.pre_level = self.cpuq.quota_level
+                    self.step_to(self.cpuq, self.cpuq.quota_level + int(range/2))
+            else:
+                print(f"No violation, incrementing cycles to {self.cycles}")
+
+
 
 
 class PIDController(Controller):
@@ -99,8 +126,7 @@ class PIDController(Controller):
     # TODO: either do proper tuning, or come up with some way to estimate while running
     Kp, Ki, Kd = (1.0, 1.0, 1.0)
 
-    # TODO: pass from ctx.args
-    SAMPLING_INTERVAL = 1 
+    SAMPLING_INTERVAL = 1
 
     def __init__(self, cpuq, llc, target, margin):
         super().__init__(cpuq, llc, target, margin)
@@ -116,7 +142,6 @@ class PIDController(Controller):
     def regulate(self, error):
         proportional = self.Kp * error
         integral = self.Ki * sum(self.buffer) * self.SAMPLING_INTERVAL
-
         try:
             derivative = self.Kd * (error - self.buffer[-2]) / self.SAMPLING_INTERVAL
         except IndexError:
@@ -150,7 +175,7 @@ class ProportionalController(Controller):
         if level_change < 0:
             self.cycles = 0
             self.step_by(self.cpuq, level_change)
-        
+
         if level_change > 0:
             self.cycles += 1
             if self.cycles >= self.CYCLE_THRESHOLD:
@@ -201,7 +226,7 @@ class StepController(Controller):
 #         print(datetime.now().isoformat(' ') + ' lcUtils: ', lc_utils,
 #               ' beUtils: ', be_utils, ' beq: ', beq, ' margin: ', margin)
 
-    
+
 #     exceed = latency > self.lat_threshold
 #     hold = margin > self.lat_threshold and not exceed
 
