@@ -86,7 +86,6 @@ class AdaptiveController(Controller):
         self.cycles = 0
         self.points = deque(maxlen=2)
         self.qstep_default = cpuq.level_max / 10
-        self.qstep = self.qstep_default
         self.recovery = False
 
     def update(self, be_containers, lc_containers, lat):
@@ -102,7 +101,9 @@ class AdaptiveController(Controller):
 
     def _measure(self):
         m_slack = sum(self.buffer) / len(self.buffer)
-        self.points.append((self.cpuq.quota_level, m_slack))
+        if self.points:
+            if self.cpuq.quota_level != self.points[-1][0]:
+                self.points.append((self.cpuq.quota_level, m_slack))
         print(f"Measured ({self.cpuq.quota_level} Q, {m_slack} slack)")
         return m_slack
 
@@ -112,7 +113,10 @@ class AdaptiveController(Controller):
     def _rate(self, p1, p2):
         dq = p2[0] - p1[0]
         ds = p2[1] - p1[1]
-        return ds/dq
+        try:
+            return ds/dq
+        except ZeroDivisionError:
+            return 0.01
 
     def _compute_step(self, m_slack):
         try:
@@ -121,14 +125,15 @@ class AdaptiveController(Controller):
             qstep = correction / rate
             print(f"Estimated: rate = {rate}, correction = {correction}, qstep = {qstep}")
             return qstep
-        except: IndexError:
+        except IndexError:
+            print("IndexError in for points[]")
             return self.qstep_default
 
-    def _violation(self, slack):
+    def _violation(self):
         self._status("VIOLATION")
+        self.restore_level = int(self.cpuq.quota_level / 2)
         self.step_to(self.cpuq, self.cpuq.BUDGET_LEV_MIN)
         self.points.clear()
-        self.restore_level = int(self.cpuq.quota_level / 2)
         self.recovery = True
 
     def regulate(self, slack):
@@ -146,15 +151,21 @@ class AdaptiveController(Controller):
         else:
             if slack < self.MARGIN:
                 self.cycles = 0
-                self._violation(slack)
+                self._violation()
             else:
                 self.cycles += 1
                 if self.cycles >= self.BUFFER_SIZE:
                     self.cycles = 0
                     m_slack = self._measure()
-                    if len(self.points) >= 2:
-                        self._compute_step(m_slack)
-            self.qstep = qstep
+
+                    if m_slack >= self.HOLD:
+                        self._status("SURPLUS")
+                        qstep = self._compute_step(m_slack)
+                        self.step_by(self.cpuq, qstep)
+                    elif m_slack >= self.MARGIN:
+                        self._status("HOLD")
+                    else:
+                        self._violation()
 
 
 class BucketController(Controller):
