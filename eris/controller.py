@@ -73,6 +73,58 @@ class Controller():
 
 
 
+class BasicController(Controller):
+    def __init__(self, cpuq, llc, target, margin):
+        super().__init__(cpuq, llc, target, margin)
+        self.cycles = 0
+        self.recovery = False
+
+    def update(self, be_containers, lc_containers, lat):
+        self.be_containers = be_containers
+        self.lc_containers = lc_containers
+
+        slack = (self.target - lat) / self.target
+        self.buffer.append(slack)
+        self.regulate(slack)
+
+    def _status(self, msg):
+        print(msg + ':', f"slack={self.buffer[-1]}, level={self.cpuq.quota_level}, cycles={self.cycles}")
+
+    def _measure(self):
+        m_slack = sum(self.buffer) / len(self.buffer)
+        print(f"Measured ({self.cpuq.quota_level} Q, {m_slack} slack)")
+        return m_slack
+
+    def _violation(self):
+        self._status("VIOLATION")
+        self.restore_level = int(self.cpuq.quota_level / 2)
+        self.step_to(self.cpuq, self.cpuq.BUDGET_LEV_MIN)
+        self.recovery = True
+
+    def regulate(self, slack):
+        if self.recovery:
+            self.cycles += 1
+            if self.cycles >= self.BUFFER_SIZE:
+                self.cycles = 0
+                m_slack = self._measure()
+                if m_slack > self.HOLD:
+                    print(f"Recovered slack, restoring quota to level {self.restore_level}")
+                    self.recovery = False
+                    self.step_to(self.cpuq, self.restore_level)
+                else:
+                    print("Continuing recovery ...")
+        else:
+            if slack < self.MARGIN:
+                self.cycles = 0
+                self._violation()
+            else:
+                self.cycles += 1
+                if self.cycles >= self.BUFFER_SIZE:
+                    m_slack = self._measure()
+                    self.decide(m_slack)
+                    self.step_up(self.cpuq)
+
+
 class AdaptiveController(Controller):
 
     # Cycles to monitor / measurement sample size
