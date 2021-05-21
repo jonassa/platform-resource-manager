@@ -55,7 +55,8 @@ CONTROLLER_MAP = {
     'proportional': ProportionalController,
     'step': StepController,
     'pid': PIDController,
-    'binary': HeuristicController,
+    'binary': BinaryController,
+    'bucket': BucketController,
     'adaptive': AdaptiveController,
 }
 

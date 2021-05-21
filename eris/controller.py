@@ -66,12 +66,98 @@ class Controller():
         if level > resource.level_max:
             level = resource.BUDGET_LEV_FULL
 
-        resource.set_level(level)
-        resource.budgeting(self.be_containers, self.lc_containers)
-        print(f"{datetime.now().isoformat(' ')} Setting BE CPU quota to level {resource.quota_level}")
+        if level != resource.quota_level:
+            resource.set_level(level)
+            resource.budgeting(self.be_containers, self.lc_containers)
+            print(f"{datetime.now().isoformat(' ')} Setting BE CPU quota to level {resource.quota_level}")
+
 
 
 class AdaptiveController(Controller):
+
+    # Cycles to monitor / measurement sample size
+    BUFFER_SIZE = 10
+
+    MARGIN = 0.05
+    HOLD = 0.20
+
+    def __init__(self, cpuq, llc, target, margin):
+        super().__init__(cpuq, llc, target, margin)
+        self.cycles = 0
+        self.points = deque(maxlen=2)
+        self.qstep_default = cpuq.level_max / 10
+        self.qstep = self.qstep_default
+        self.recovery = False
+
+    def update(self, be_containers, lc_containers, lat):
+        self.be_containers = be_containers
+        self.lc_containers = lc_containers
+
+        slack = (self.target - lat) / self.target
+        self.buffer.append(slack)
+        self.regulate(slack)
+
+    def _status(self, msg):
+        print(msg + ':', f"slack={self.buffer[-1]}, level={self.cpuq.quota_level}, cycles={self.cycles}")
+
+    def _measure(self):
+        m_slack = sum(self.buffer) / len(self.buffer)
+        self.points.append((self.cpuq.quota_level, m_slack))
+        print(f"Measured ({self.cpuq.quota_level} Q, {m_slack} slack)")
+        return m_slack
+
+    def _correction(self, slack):
+        return (self.HOLD - slack) / 2
+
+    def _rate(self, p1, p2):
+        dq = p2[0] - p1[0]
+        ds = p2[1] - p1[1]
+        return ds/dq
+
+    def _compute_step(self, m_slack):
+        try:
+            rate = self._rate(self.points[-2], self.points[-1])
+            correction = self._correction(m_slack)
+            qstep = correction / rate
+            print(f"Estimated: rate = {rate}, correction = {correction}, qstep = {qstep}")
+            return qstep
+        except: IndexError:
+            return self.qstep_default
+
+    def _violation(self, slack):
+        self._status("VIOLATION")
+        self.step_to(self.cpuq, self.cpuq.BUDGET_LEV_MIN)
+        self.points.clear()
+        self.restore_level = int(self.cpuq.quota_level / 2)
+        self.recovery = True
+
+    def regulate(self, slack):
+        if self.recovery:
+            self.cycles += 1
+            if self.cycles >= self.BUFFER_SIZE:
+                self.cycles = 0
+                m_slack = self._measure()
+                if m_slack > self.HOLD:
+                    print(f"Recovered slack, restoring quota to level {self.restore_level}")
+                    self.recovery = False
+                    self.step_to(self.cpuq, self.restore_level)
+                else:
+                    print("Continuing recovery ...")
+        else:
+            if slack < self.MARGIN:
+                self.cycles = 0
+                self._violation(slack)
+            else:
+                self.cycles += 1
+                if self.cycles >= self.BUFFER_SIZE:
+                    self.cycles = 0
+                    m_slack = self._measure()
+                    if len(self.points) >= 2:
+                        self._compute_step(m_slack)
+            self.qstep = qstep
+
+
+class BucketController(Controller):
 
     # Cycles to monitor / measurement sample size
     BUFFER_SIZE = 10
