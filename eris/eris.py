@@ -55,7 +55,8 @@ CONTROLLER_MAP = {
     'proportional': ProportionalController,
     'step': StepController,
     'pid': PIDController,
-    'heuristic': HeuristicController,
+    'binary': HeuristicController,
+    'adaptive': AdaptiveController,
 }
 
 
@@ -467,7 +468,7 @@ def parse_arguments():
                         from analyze.py tool', default=Analyzer.THRESH_FILE)
     parser.add_argument('-L', '--latency-interval', help='Latency monitoring\
                         interval', type=float, default=1.0)
-    parser.add_argument('--latency-threshold', help='Latency threshold', type=float, default=4.764)
+    parser.add_argument('--latency-threshold', help='Latency threshold', type=float, default=4.76)
     parser.add_argument('--controller', help='Which latency-based controller/algorithm to use', default='proportional')
 
     args = parser.parse_args()

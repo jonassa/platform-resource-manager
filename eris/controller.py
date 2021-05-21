@@ -71,10 +71,66 @@ class Controller():
         print(f"{datetime.now().isoformat(' ')} Setting BE CPU quota to level {resource.quota_level}")
 
 
-class HeuristicController(Controller):
+class AdaptiveController(Controller):
+
+    # Cycles to monitor / measurement sample size
+    BUFFER_SIZE = 10
+
+    SLACK_HIGH = 0.50
+    SLACK_MID = 0.30
+    SLACK_LOW = 0.15
+    SLACK_HOLD = 0.10
+    SLACK_MARGIN = 0.05
+
+    def __init__(self, cpuq, llc, target, margin):
+        super().__init__(cpuq, llc, target, margin)
+        self.cycles = 0
+
+    def update(self, be_containers, lc_containers, lat):
+        self.be_containers = be_containers
+        self.lc_containers = lc_containers
+
+        slack = (self.target - lat) / self.target
+        self.buffer.append(slack)
+        self.regulate(slack)
+
+    def _status(self, msg):
+        print(msg, ':', f"slack={self.buffer[-1]}, level={self.cpuq.quota_level}, cycles={self.cycles}")
+
+    def _measure(self):
+        return sum(self.buffer) / len(self.buffer)
+
+    def regulate(self, slack):
+        if slack < self.SLACK_MARGIN:
+            self._status("VIOLATION")
+            self.cycles = 0
+            self.step_to(self.cpuq, self.cpuq.BUDGET_LEV_MIN)
+        else:
+            self.cycles += 1
+            if self.cycles >= self.BUFFER_SIZE:
+                self.cycles = 0
+                mean = self._measure()
+                print(f"Mean slack: {mean} at level {self.cpuq.quota_level}")
+                if mean < self.SLACK_HOLD:
+                    self._status("HOLD")
+                elif mean < self.SLACK_LOW:
+                    self._status("Step low")
+                    self.step_up(self.cpuq)
+                elif mean < self.SLACK_MID:
+                    self._status("Step mid")
+                    self.step_by(self.cpuq, 5)
+                elif mean < self.SLACK_HIGH:
+                    self._status("Step high")
+                    self.step_by(self.cpuq, 10)
+                else:
+                    self._status("Step jump")
+                    self.step_by(self.cpuq, 25)
+
+
+class BinaryController(Controller):
+    """ Gets stuck, could fix """
 
     LOWER_SLACK  = 0.1
-    UPPER_SLACK  = 0.6
     WAIT_CYCLES  = 5
 
     def __init__(self, cpuq, llc, target, margin):
