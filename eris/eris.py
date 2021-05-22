@@ -58,7 +58,7 @@ CONTROLLER_MAP = {
     'binary': BinaryController,
     'bucket': BucketController,
     'adaptive': AdaptiveController,
-    'basic': AdaptiveController,
+    'basic': BasicController,
 }
 
 

@@ -74,10 +74,18 @@ class Controller():
 
 
 class BasicController(Controller):
+
+    BUFFER_SIZE = 10
+    MARGIN = 0.05
+    SLACK_TARGET = 0.20
+    RECOVERY_THRESHOLD = 0.3
+
     def __init__(self, cpuq, llc, target, margin):
         super().__init__(cpuq, llc, target, margin)
         self.cycles = 0
         self.recovery = False
+        self.prev_loss = None
+        self.increase_quota = True
 
     def update(self, be_containers, lc_containers, lat):
         self.be_containers = be_containers
@@ -92,37 +100,60 @@ class BasicController(Controller):
 
     def _measure(self):
         m_slack = sum(self.buffer) / len(self.buffer)
-        print(f"Measured ({self.cpuq.quota_level} Q, {m_slack} slack)")
+        print(f"Measured ({self.cpuq.quota_level} quota level, {m_slack} slack)")
         return m_slack
+
+    def _loss(self, m_slack):
+        return abs(self.SLACK_TARGET - m_slack)
 
     def _violation(self):
         self._status("VIOLATION")
+        self.cycles = 0
         self.restore_level = int(self.cpuq.quota_level / 2)
         self.step_to(self.cpuq, self.cpuq.BUDGET_LEV_MIN)
         self.recovery = True
 
-    def regulate(self, slack):
-        if self.recovery:
-            self.cycles += 1
-            if self.cycles >= self.BUFFER_SIZE:
-                self.cycles = 0
-                m_slack = self._measure()
-                if m_slack > self.HOLD:
-                    print(f"Recovered slack, restoring quota to level {self.restore_level}")
-                    self.recovery = False
-                    self.step_to(self.cpuq, self.restore_level)
-                else:
-                    print("Continuing recovery ...")
+    def _running_avg(self, n):
+        return sum(self.buffer[-n, :]) / n
+
+    def _increment(self):
+        self.cycles += 1
+        if self.cycles >= self.BUFFER_SIZE:
+            self.cycles = 0
+            return True
         else:
-            if slack < self.MARGIN:
-                self.cycles = 0
-                self._violation()
+            return False
+
+    def _decide(self, m_slack):
+        loss = self._loss(m_slack)
+
+        if self.prev_loss:
+            if loss - self.prev_loss > 0:
+                self.increase_quota = not self.increase_quota
+
+        self.prev_loss = loss
+
+        if self.increase_quota:
+            self.step_up(self.cpuq)
+        else:
+            self.step_down(self.cpuq)
+
+    def regulate(self, slack):
+        if not self.recovery:
+            if self._running_avg(3) > self.MARGIN:
+                if self._increment():
+                    self._decide(self._measure())
             else:
-                self.cycles += 1
-                if self.cycles >= self.BUFFER_SIZE:
-                    m_slack = self._measure()
-                    self.decide(m_slack)
-                    self.step_up(self.cpuq)
+                self._violation()
+        else: # Recovering from a slack violation
+            if self._increment():
+                r_avg = self._running_avg(3)
+                if r_avg > self.RECOVERY_THRESHOLD:
+                    print(f"Recovered slack, restoring quota to level {self.restore_level}")
+                    self.step_to(self.cpuq, self.restore_level)
+                    self.recovery = False
+                else:
+                    print(f"Slack is {r_avg}, still recovering ...")
 
 
 class AdaptiveController(Controller):
