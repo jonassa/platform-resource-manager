@@ -114,7 +114,7 @@ class BasicController(Controller):
         self.recovery = True
 
     def _running_avg(self, n):
-        return sum(self.buffer[-n, :]) / n
+        return sum(list(self.buffer)[-n:]) / n
 
     def _increment(self):
         self.cycles += 1
