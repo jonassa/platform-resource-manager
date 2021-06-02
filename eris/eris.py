@@ -349,8 +349,9 @@ def mon_metric_cycle(ctx):
         if data:
             set_metrics(ctx, timestamp, data)
 
-def read_latency_file():
-    latfile = open('/workspace/memcached/lat_log/latency.txt')
+def read_latency_file(latency_file):
+    # latfile = open('/workspace/memcached/lat_log/latency.txt')
+    latfile = open(latency_file)
     content = latfile.readlines()
     return float(content[0])
 
@@ -366,7 +367,7 @@ def monitor(ctx, interval):
 
     while not ctx.shutdown:
 
-        ctx.lat = read_latency_file()
+        ctx.lat = read_latency_file(ctx.args.latency_file)
         mon_util_cycle(ctx)
 
         while True:
@@ -472,6 +473,7 @@ def parse_arguments():
                         interval', type=float, default=1.0)
     parser.add_argument('--latency-threshold', help='Latency threshold', type=float, default=4.76)
     parser.add_argument('--controller', help='Which latency-based controller/algorithm to use', default='proportional')
+    parser.add_argument('--latency-file', help='File from which to read tail latency', default='/workspace/memcached/lat_log/latency.txt')
 
     args = parser.parse_args()
     if args.verbose:

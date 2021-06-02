@@ -1,0 +1,10 @@
+{
+    "dc-server": {
+        "cpus": 9,
+        "type": "latency_critical"
+    },
+    "spec2017": {
+        "cpus": 9,
+        "type": "best_efforts"
+    }
+}
