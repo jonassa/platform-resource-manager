@@ -126,11 +126,11 @@ class BasicController(Controller):
 
     def _step_from_slack(self, m_slack):
         if m_slack > 0.75:
-            return 15
-        elif m_slack > 0.5:
-            return 10
-        elif m_slack > 0.25:
             return 5
+        elif m_slack > 0.5:
+            return 3
+        elif m_slack > 0.25:
+            return 2
         else:
             return 1
 
