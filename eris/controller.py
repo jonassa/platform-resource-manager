@@ -124,6 +124,16 @@ class BasicController(Controller):
         else:
             return False
 
+    def _step_from_slack(self, m_slack):
+        if m_slack > 0.75:
+            return 15
+        elif m_slack > 0.5:
+            return 10
+        elif m_slack > 0.25:
+            return 5
+        else:
+            return 1
+
     def _decide(self, m_slack):
         loss = self._loss(m_slack)
 
@@ -134,9 +144,10 @@ class BasicController(Controller):
         self.prev_loss = loss
 
         if self.increase_quota:
-            self.step_up(self.cpuq)
+            step = self._step_from_slack(m_slack)
         else:
-            self.step_down(self.cpuq)
+            step = -self._step_from_slack(m_slack)
+        self.step_by(self.cpuq, step)
 
     def regulate(self, slack):
         if not self.recovery:
