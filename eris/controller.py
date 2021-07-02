@@ -66,10 +66,10 @@ class Controller():
         if level > resource.level_max:
             level = resource.BUDGET_LEV_FULL
 
-        if level != resource.quota_level:
-            resource.set_level(level)
-            resource.budgeting(self.be_containers, self.lc_containers)
-            print(f"{datetime.now().isoformat(' ')} Setting BE CPU quota to level {resource.quota_level}")
+        #if level != resource.quota_level:
+        resource.set_level(level)
+        resource.budgeting(self.be_containers, self.lc_containers)
+        print(f"{datetime.now().isoformat(' ')} Setting BE CPU quota to level {resource.quota_level}")
 
 
 
@@ -459,6 +459,37 @@ class StepController(Controller):
                 self.cycles = 0
                 self.step_up(self.cpuq)
 
+class CatController(Controller):
+    def __init__(self, cpuq, llc, target, margin):
+        super().__init__(cpuq, llc, target, margin)
+
+    def regulate(self, lat):
+        self.step_to(self.cpuq, 10)
+        self.step_to(self.llc, 15)
+
+
+class ZeroQuota(Controller):
+    def __init__(self, cpuq, llc, target, margin):
+        super().__init__(cpuq, llc, target, margin)
+
+    def regulate(self, lat):
+        self.step_to(self.cpuq, self.cpuq.BUDGET_LEV_MIN)
+
+class ZeroCache(Controller):
+    def __init__(self, cpuq, llc, target, margin):
+        super().__init__(cpuq, llc, target, margin)
+
+    def regulate(self, lat):
+        self.step_to(self.cpuq, self.cpuq.BUDGET_LEV_FULL)
+        self.step_to(self.llc, 0)
+
+class ZeroBoth(Controller):
+    def __init__(self, cpuq, llc, target, margin):
+        super().__init__(cpuq, llc, target, margin)
+
+    def regulate(self, lat):
+        self.step_to(self.cpuq, self.cpuq.BUDGET_LEV_MIN)
+        self.step_to(self.llc, 0)
 
 # def detect_margin_exceed(self, latency, lc_utils, be_utils):
 #     """

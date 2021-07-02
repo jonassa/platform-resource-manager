@@ -59,6 +59,10 @@ CONTROLLER_MAP = {
     'bucket': BucketController,
     'adaptive': AdaptiveController,
     'basic': BasicController,
+    'cat': CatController,
+    'zeroquota': ZeroQuota,
+    'zerocache': ZeroCache,
+    'zeroboth': ZeroBoth
 }
 
 
